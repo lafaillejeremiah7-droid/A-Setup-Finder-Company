@@ -1,0 +1,9 @@
+[project]
+name = "a-setup-finder-company"
+version = "0.1.0"
+description = "Rule-based MGC futures signal system with DXY and prop-risk controls"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.unittest]
+start-directory = "tests"
