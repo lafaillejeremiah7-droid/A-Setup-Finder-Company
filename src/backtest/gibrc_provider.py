@@ -41,6 +41,7 @@ class GIBRCReplayConfig:
     absorption: AbsorptionConfig = AbsorptionConfig()
     trade_plan: TradePlanConfig = TradePlanConfig()
     lifecycle: LifecycleConfig = LifecycleConfig()
+    require_dxy: bool = True
 
 
 class GIBRCReplayProvider:
@@ -48,7 +49,7 @@ class GIBRCReplayProvider:
 
     Absorption evidence is collected with the setup but is not allowed to veto
     the core candidate here. OFF / REQUIRED / RANK_ONLY is applied once at the
-    ablation boundary, which keeps the samples matched for research.
+    ablation boundary. DXY can also be disabled for matched core-vs-DXY research.
     """
 
     def __init__(
@@ -268,6 +269,7 @@ class GIBRCReplayProvider:
             trade_plan=plan,
             risk=risk,
             require_absorption=False,
+            require_dxy=self.config.require_dxy,
         )
         return CandidateSignal(
             core_signal=result,
