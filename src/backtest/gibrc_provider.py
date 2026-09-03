@@ -44,16 +44,11 @@ class GIBRCReplayConfig:
 
 
 class GIBRCReplayProvider:
-    """Stateful historical signal provider using the same deterministic modules.
+    """Stateful historical candidate provider using deterministic closed bars.
 
-    This object consumes only BacktestContext closed-bar views. It discovers
-    location from confirmed support/resistance zones or current valid trendlines,
-    detects executed-volume absorption, waits for a later BOS confirmation via
-    SetupLifecycle, evaluates synchronized DXY, builds structural Entry/SL/TP,
-    sizes through the generic prop-risk engine, and finally calls compose_signal.
-
-    It is intentionally conservative. Missing ATR, pivots, targets, DXY state,
-    or verified risk state produces no actionable signal rather than guessed data.
+    Absorption evidence is collected with the setup but is not allowed to veto
+    the core candidate here. OFF / REQUIRED / RANK_ONLY is applied once at the
+    ablation boundary, which keeps the samples matched for research.
     """
 
     def __init__(
@@ -200,7 +195,6 @@ class GIBRCReplayProvider:
             close=bar.close,
         )
 
-        # A location without a structural invalidation anchor cannot be armed.
         if self.lifecycle.armed is None:
             if bullish_location and latest_low is None:
                 bullish_location = False
@@ -273,6 +267,7 @@ class GIBRCReplayProvider:
             dxy=dxy,
             trade_plan=plan,
             risk=risk,
+            require_absorption=False,
         )
         return CandidateSignal(
             core_signal=result,
