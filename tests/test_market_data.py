@@ -18,9 +18,11 @@ class MarketDataTests(unittest.TestCase):
             "high": 4403,
             "low": 4398,
             "close": 4401,
+            "volume": 300,
             "bidVolume": 120,
             "offerVolume": 180,
         })
+        self.assertEqual(bar.volume, 300)
         self.assertTrue(has_executed_side_volume(bar))
         self.assertEqual(bar_delta(bar), 60)
         self.assertAlmostEqual(bar_delta_pct(bar), 0.2)
@@ -45,6 +47,17 @@ class MarketDataTests(unittest.TestCase):
                 "high": 4399,
                 "low": 4398,
                 "close": 4401,
+            })
+
+    def test_rejects_negative_total_volume(self):
+        with self.assertRaisesRegex(MarketDataError, "INVALID_VOLUME"):
+            normalize_tradovate_bar({
+                "timestamp": "2026-09-02T20:00:00.000Z",
+                "open": 4400,
+                "high": 4403,
+                "low": 4398,
+                "close": 4401,
+                "volume": -1,
             })
 
     def test_mgc_contract_constants(self):
