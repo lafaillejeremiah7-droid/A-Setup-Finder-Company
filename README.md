@@ -123,6 +123,25 @@ Prop-firm rules must be configurable rather than permanently hard-coded to one a
 
 A setup is rejected if it violates the configured account rules.
 
+## Backtesting and Validation
+
+The repository includes an event-driven bar-level backtest harness designed to prevent ordinary look-ahead leakage.
+
+Key rules:
+
+- the strategy sees only completed MGC bars at each historical instant;
+- it sees only DX bars completed by that same instant;
+- a signal created from a completed candle cannot use that candle's earlier high/low as a post-entry outcome;
+- same-bar stop/target ambiguity defaults to conservative stop-first handling;
+- gap-through-stop events fill at the first available open rather than the theoretical stop;
+- commissions and slippage are explicit inputs;
+- signal-close and next-bar-open entry timing can be compared;
+- unsorted or duplicate historical timestamps are rejected.
+
+This is a **bar-level screening engine**, not final proof of execution quality. Because GIBRC depends on executed bid/offer flow for absorption, final validation requires sufficiently granular historical order-flow data and ultimately tick/trade replay for stop/target ordering and slippage realism.
+
+See `docs/VALIDATION_PROTOCOL.md` for the falsification-first research process.
+
 ## Core Definition Groups
 
 The system uses 18 required definition groups:
@@ -169,15 +188,19 @@ Exact formulas, parameters, assumptions, and testable thresholds belong in `docs
 3. Build MGC analysis engine
 4. Build DXY filter
 5. Build signal / risk engine
-6. Backtest without look-ahead bias
-7. Run live in paper / shadow mode
-8. Build dashboard/API layer
-9. Use validated dashboard signals for manual execution in Tradovate
+6. Build no-lookahead backtest foundation
+7. Connect the complete GIBRC setup state machine to historical replay
+8. Validate with realistic costs, OOS testing, parameter surfaces, and walk-forward analysis
+9. Run live in paper / shadow mode
+10. Build dashboard/API layer
+11. Use validated dashboard signals for manual execution in Tradovate
 
 ## Current Status
 
-**Phase 2: Python market-structure engine in development.**
+**Validation infrastructure in development.**
 
-Implemented foundation includes ATR, confirmed pivots with explicit confirmation delay, market-structure classification, BOS checks, trendline construction/interactions, and support/resistance zone clustering/interactions.
+Implemented foundation includes market-data normalization, ATR, confirmed pivots with explicit confirmation delay, market-structure classification, BOS checks, trendline construction/interactions, support/resistance zones, fail-closed absorption, DXY state, structural trade planning, prop-risk gating, final signal composition, and an event-driven no-lookahead bar backtester with explicit execution friction.
 
-Do not treat the system as production-ready until its remaining rules have been implemented, tested, backtested, and validated in live shadow mode.
+The next major engineering gap is the exact stateful GIBRC setup lifecycle that connects location -> absorption -> later structure confirmation -> trade plan -> risk -> final signal during historical replay.
+
+Do not treat the system as production-ready until that end-to-end state machine has been connected to clean historical MGC/DX data, tested out of sample, stress-tested for costs and parameter sensitivity, and validated in live shadow mode.
