@@ -5,10 +5,14 @@ This is deliberately labelled EXPLORATORY because:
 - MGC is public TopstepX root-symbol OHLCV, not individual-contract tick history.
 - UDXUSD is the free HistData U.S. Dollar Index quote series, used only as a
   structure/bias proxy for ICE DX futures.
-- MGC public OHLCV has no executed bid/offer split, so absorption is OFF.
+- MGC public OHLCV has no executed bid/offer split, so absorption can only be
+  tested as unavailable/required; it cannot be positively confirmed.
 
-The runner still uses the repository's deterministic GIBRC setup, structural
-trade-plan, prop-risk and backtest modules. No lookahead data is introduced.
+The runner compares the same core MGC setup under four policies:
+1. CORE: location + later BOS + structural SL/TP + RR + prop risk.
+2. CORE_DXY: same core plus DXY confirmation.
+3. CORE_ABSORPTION: same core plus absorption requirement.
+4. CORE_DXY_ABSORPTION: both secondary filters required.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import requests
 
 from src.backtest.ablation import AbsorptionMode, apply_absorption_mode
 from src.backtest.engine import BacktestConfig, run_backtest
-from src.backtest.gibrc_provider import GIBRCReplayProvider
+from src.backtest.gibrc_provider import GIBRCReplayConfig, GIBRCReplayProvider
 from src.market.normalize_tradovate_bar import MarketBar
 from src.risk.prop_risk import AccountState, PropFirmRules
 
@@ -42,16 +46,14 @@ def load_mgc(url: str) -> list[MarketBar]:
     frame = pd.read_csv(io.StringIO(response.text))
     frame["datetime"] = pd.to_datetime(frame["datetime"], utc=True)
     frame = frame.sort_values("datetime").drop_duplicates("datetime", keep="last")
-    bars: list[MarketBar] = []
-    for row in frame.itertuples(index=False):
-        bars.append(
-            MarketBar(
-                timestamp=row.datetime.to_pydatetime(),
-                open=float(row.open), high=float(row.high), low=float(row.low),
-                close=float(row.close), volume=float(row.volume),
-            )
+    return [
+        MarketBar(
+            timestamp=row.datetime.to_pydatetime(),
+            open=float(row.open), high=float(row.high), low=float(row.low),
+            close=float(row.close), volume=float(row.volume),
         )
-    return bars
+        for row in frame.itertuples(index=False)
+    ]
 
 
 def _parse_histdata_file(path: Path) -> list[tuple[datetime, float, float, float, float, float]]:
@@ -65,7 +67,6 @@ def _parse_histdata_file(path: Path) -> list[tuple[datetime, float, float, float
         if len(parts) < 5:
             continue
         try:
-            # HistData timestamps are EST (UTC-5) with no DST adjustment.
             local = datetime.strptime(parts[0].strip(), "%Y%m%d %H%M%S")
             ts = (local + timedelta(hours=5)).replace(tzinfo=timezone.utc)
             o, h, l, c = map(float, parts[1:5])
@@ -85,15 +86,10 @@ def load_udx_proxy(root: Path) -> list[MarketBar]:
         raise RuntimeError(f"NO_HISTDATA_UDX_ROWS_FOUND_UNDER:{root}")
 
     frame = pd.DataFrame(records, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    frame = frame.sort_values("timestamp").drop_duplicates("timestamp", keep="last")
-    frame = frame.set_index("timestamp")
-
-    # The strategy's DXY role is higher-timeframe structure/bias. Aggregate the
-    # 1-minute cash-index proxy to completed 1-hour bars; label at bar completion.
+    frame = frame.sort_values("timestamp").drop_duplicates("timestamp", keep="last").set_index("timestamp")
     hourly = frame.resample("1h", closed="left", label="right", origin="epoch").agg(
         {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
     ).dropna(subset=["open", "high", "low", "close"])
-
     return [
         MarketBar(
             timestamp=idx.to_pydatetime(),
@@ -171,11 +167,6 @@ def main() -> int:
             consistency_pass=None,
         )
 
-    provider = GIBRCReplayProvider(rules=rules, account_state_provider=account_state)
-
-    def signal_provider(context):
-        return apply_absorption_mode(provider.candidate(context), AbsorptionMode.OFF)
-
     config = BacktestConfig(
         point_value=10.0,
         min_tick=0.1,
@@ -183,30 +174,60 @@ def main() -> int:
         exit_slippage_ticks=1.0,
         round_trip_cost_per_contract=2.00,
     )
-    result = run_backtest(mgc_bars=mgc, dxy_bars=dxy, signal_provider=signal_provider, config=config)
 
-    trades_path = args.out_dir / "trades.csv"
-    write_trades(trades_path, result)
+    variants = {
+        "CORE": (False, AbsorptionMode.OFF),
+        "CORE_DXY": (True, AbsorptionMode.OFF),
+        "CORE_ABSORPTION": (False, AbsorptionMode.REQUIRED),
+        "CORE_DXY_ABSORPTION": (True, AbsorptionMode.REQUIRED),
+    }
+    results = {}
+    for label, (require_dxy, absorption_mode) in variants.items():
+        provider = GIBRCReplayProvider(
+            rules=rules,
+            account_state_provider=account_state,
+            config=GIBRCReplayConfig(require_dxy=require_dxy),
+        )
+
+        def signal_provider(context, *, _provider=provider, _mode=absorption_mode):
+            return apply_absorption_mode(_provider.candidate(context), _mode)
+
+        result = run_backtest(
+            mgc_bars=mgc,
+            dxy_bars=dxy,
+            signal_provider=signal_provider,
+            config=config,
+        )
+        results[label] = result
+        write_trades(args.out_dir / f"trades_{label.lower()}.csv", result)
+
     summary = {
-        "label": "EXPLORATORY_PUBLIC_OVERLAP_ABSORPTION_OFF",
+        "label": "EXPLORATORY_PUBLIC_OVERLAP_FILTER_ABLATION",
         "mgc_source": args.mgc_url,
         "dxy_source": "HistData UDXUSD 1-minute quote proxy, aggregated to 1h",
         "mgc_first": start.isoformat(),
         "mgc_last": end.isoformat(),
         "mgc_bars": len(mgc),
         "dxy_1h_bars": len(dxy),
-        "absorption_mode": "OFF",
+        "core_definition": "MGC location + later BOS confirmation + structural SL/TP + minimum RR + prop-risk pass",
+        "variants": {
+            label: {
+                "require_dxy": variants[label][0],
+                "absorption_mode": variants[label][1].value,
+                "backtest": result.summary.__dict__,
+                "provider_calls": result.provider_calls,
+                "duplicate_signals_suppressed": result.duplicate_signals_suppressed,
+                "signals_ignored_while_position_open": result.signals_ignored_while_position_open,
+                "unfilled_pending_entries": result.unfilled_pending_entries,
+            }
+            for label, result in results.items()
+        },
         "limitations": [
-            "MGC public root-symbol OHLCV has no executed bid/offer volume.",
+            "MGC public root-symbol OHLCV has no executed bid/offer volume, so absorption-required variants cannot receive valid absorption confirmation.",
             "UDXUSD is a cash/index quote proxy, not individual ICE DX futures.",
             "MGC root-symbol history does not preserve individual futures contract identity.",
-            "Therefore this run is exploratory and is not the final production-quality GIBRC validation.",
+            "Therefore this is an exploratory gate-ablation run, not final production-quality validation.",
         ],
-        "backtest": result.summary.__dict__,
-        "provider_calls": result.provider_calls,
-        "duplicate_signals_suppressed": result.duplicate_signals_suppressed,
-        "signals_ignored_while_position_open": result.signals_ignored_while_position_open,
-        "unfilled_pending_entries": result.unfilled_pending_entries,
     }
     (args.out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
     print(json.dumps(summary, indent=2, default=str))
