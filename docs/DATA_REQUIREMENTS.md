@@ -1,43 +1,71 @@
 # Data Requirements & Validation Gate
 
-This document records what data the strategy requires before implementation begins.
+This document records the verified v1 market-data path and the remaining runtime checks.
 
-## MGC Price Data
+## Decision
 
-Required:
+Use **Tradovate market data for MGC and ICE U.S. Dollar Index futures (`DX`)** when the account's exchange entitlements expose those products.
 
-- OHLCV bars
-- 5m execution bars
-- 30m/4H context bars (initial hypothesis)
-- timestamps with consistent session/timezone handling
+This keeps v1 on one market-data architecture and avoids silently mixing a TradingView cash-index feed with futures data.
 
-Tradovate's documented Market Data API supports real-time quotes, DOM, charts, and histograms through WebSocket market-data requests. Chart requests support minute bars and optional histogram data.
+## MGC Price + Order-Flow Data
 
-**Status: FEASIBLE, integration not yet authenticated/tested against this account.**
+Required bar fields:
 
-## MGC Absorption / Order Flow
+- timestamp
+- open
+- high
+- low
+- close
+- total volume
+- bid volume
+- offer volume
 
-Required to implement the intended strategy faithfully:
+Tradovate chart messages document bar-level `bidVolume` and `offerVolume`. These are the v1 inputs for bar-level delta and absorption research.
 
-- trade-level or price-level information sufficient to distinguish aggressive buying from aggressive selling, OR
-- an equivalent documented histogram/order-flow feed whose semantics allow this calculation.
+Required tick fields when tick-level refinement is enabled:
 
-Tradovate documents quote, DOM, chart, histogram, and tick-chart market data. However, the strategy must not assume that ordinary OHLCV or resting DOM size equals executed bid/ask volume.
+- trade price
+- trade size
+- bid price / size
+- ask price / size
+- timestamp
+- tick id
 
-Before the Absorption module is coded, we must validate exactly which Tradovate response fields are available for MGC and whether they provide the executed-side information needed for the absorption formula.
+Tradovate tick-chart messages document trade price/size together with bid/ask information. Tick packets can arrive out of chronological order, so the ingestion layer must sort and deduplicate them before strategy use.
 
-**Status: BLOCKING VALIDATION REQUIRED.**
+### Critical distinction
 
-## DXY Data
+Resting DOM size is **not** executed aggressive volume. The absorption model must use executed bid/offer bar volume and/or classified trade ticks. It must not treat DOM snapshots as absorption.
 
-Required:
+**Status: DATA FIELDS VERIFIED IN DOCUMENTATION; ACCOUNT ENTITLEMENT + LIVE SAMPLE STILL REQUIRE RUNTIME CHECK.**
 
-- 5m/15m DXY bars for execution-time state
-- 1H/4H bars for higher-timeframe context (initial hypothesis)
+## DXY / USDX Data
 
-We must identify a reliable DXY data source accessible to the application. Do not assume that the futures brokerage feed exposes the cash ICE U.S. Dollar Index under the same `DXY` symbol used by charting platforms.
+Use the ICE U.S. Dollar Index futures contract `DX` as the v1 DXY filter source.
 
-**Status: DATA SOURCE MUST BE VERIFIED.**
+ICE publishes `DX` as the symbol for U.S. Dollar Index futures. Current Tradovate trading-products/rate materials include ICE U.S. products and list `DX` as U.S. Dollar Index.
+
+Therefore:
+
+`DXY_FILTER_SOURCE = DX futures`
+
+Do not hard-code a perpetual contract month. The live adapter must resolve the active DX futures contract through Tradovate metadata/roll logic.
+
+**Status: PRODUCT PATH VERIFIED; EXACT ACTIVE CONTRACT + USER ENTITLEMENT REQUIRE RUNTIME RESOLUTION.**
+
+## Initial Timeframes
+
+### MGC
+- 4H macro context
+- 30m location / S&R context
+- 5m execution / absorption
+
+### DX
+- 4H / 1H higher-timeframe context
+- 15m / 5m confirmation
+
+These are configurable hypotheses and must be backtested.
 
 ## Prop-Firm Account Data
 
@@ -45,12 +73,29 @@ Required:
 
 - current account balance/equity
 - current drawdown floor or sufficient information to calculate it
-- max contracts
+- maximum contracts
 - active rule configuration
 
-The strategy engine should receive these values through a provider/configuration boundary so the core strategy is not tied permanently to one prop firm.
+The strategy engine receives these values through a provider/configuration boundary so core strategy logic is not permanently tied to one prop firm.
 
 **Status: RULE SOURCE + ACCOUNT DATA PATH MUST BE VERIFIED BEFORE LIVE RISK ENFORCEMENT.**
+
+## Data Quality Gates
+
+Return `NO_TRADE` whenever a required input is missing, stale, malformed, or ambiguous.
+
+Minimum checks:
+
+1. timestamps parse successfully
+2. completed bars are ordered
+3. completed bars are deduplicated
+4. OHLC values are finite
+5. `high >= max(open, close)`
+6. `low <= min(open, close)`
+7. volumes are non-negative when present
+8. MGC and DX are fresh enough for the configured timeframe
+9. active contract mapping is known
+10. absorption-dependent signals are disabled if bid/offer executed-volume fields are unavailable
 
 ## Security
 
@@ -63,6 +108,18 @@ Never commit:
 
 Secrets must be supplied through environment variables or an external secret store.
 
+Future live adapter environment variables:
+
+- `TRADOVATE_ACCESS_TOKEN`
+- `TRADOVATE_ENV=demo|live`
+
 ## Implementation Gate
 
-Coding the deterministic price-structure primitives can begin independently, but a production LONG/SHORT signal engine must not be declared complete until all four data paths above are validated.
+The deterministic data-normalization and market-structure primitives may now be implemented.
+
+A production LONG/SHORT signal engine is **not** considered complete until:
+
+1. a real MGC sample confirms bid/offer executed-volume fields under the user's entitlement,
+2. a real DX subscription resolves the active contract and streams successfully,
+3. prop-account data/rules are wired and validated,
+4. backtest/live code paths use the same strategy functions.
