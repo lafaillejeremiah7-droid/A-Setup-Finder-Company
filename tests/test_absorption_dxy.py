@@ -125,6 +125,28 @@ class AbsorptionTests(unittest.TestCase):
         signal = detect_absorption(bars, 5, AbsorptionConfig(lookback=5))
         self.assertEqual(signal.side, AbsorptionSide.UNKNOWN)
 
+    def test_partial_history_fails_closed(self):
+        bars = self._history()[:3]
+        bars.append(make_bar(3, 100, 110, 99, 102, bid=100, offer=200))
+        signal = detect_absorption(bars, 3, AbsorptionConfig(lookback=5))
+        self.assertEqual(signal.side, AbsorptionSide.UNKNOWN)
+        self.assertEqual(signal.reason, "INSUFFICIENT_DELTA_HISTORY")
+
+    def test_positive_zscore_with_nonpositive_raw_delta_cannot_be_buying_aggression(self):
+        # Historical deltas are strongly negative, so a zero delta can have a high
+        # positive z-score. The raw sign gate must prevent calling that aggressive buying.
+        bars = []
+        historical_deltas = [-100, -90, -110, -95, -105]
+        for index, delta in enumerate(historical_deltas):
+            bars.append(make_bar(index, 100, 102, 98, 100, bid=100 - delta, offer=100))
+        bars.append(make_bar(5, 100, 110, 99, 102, bid=100, offer=100))
+        signal = detect_absorption(
+            bars,
+            5,
+            AbsorptionConfig(lookback=5, aggression_z_min=2.0),
+        )
+        self.assertEqual(signal.side, AbsorptionSide.NONE)
+
 
 class DxyStateTests(unittest.TestCase):
     def test_bullish_hh_hl_dxy_supports_gold_short(self):
