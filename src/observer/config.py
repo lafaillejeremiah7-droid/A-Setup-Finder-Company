@@ -97,7 +97,7 @@ def load_config(dotenv_path: str | os.PathLike[str] | None = None) -> AppConfig:
         cid=os.environ.get("TRADOVATE_CID", "").strip(),
         sec=os.environ.get("TRADOVATE_SEC", "").strip(),
     )
-    symbol = os.environ.get("SYMBOL", "MGCV6").strip() or "MGCV6"
+    symbol = os.environ.get("SYMBOL", "MNQU6").strip() or "MNQU6"
     try:
         max_alerts = int(os.environ.get("MAX_ALERTS_PER_DAY", "2"))
     except ValueError as exc:

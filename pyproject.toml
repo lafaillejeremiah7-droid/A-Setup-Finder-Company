@@ -5,5 +5,9 @@ description = "Rule-based MGC futures signal system with DXY and prop-risk contr
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+# Live Tradovate feed only. Core strategy + backtests + replay need no deps.
+live = ["websocket-client>=1.7"]
+
 [tool.unittest]
 start-directory = "tests"

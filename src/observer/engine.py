@@ -38,7 +38,11 @@ BREAK_ATR = 0.10        # close must clear the line by this * ATR to count as a 
 TOUCH_ATR = 0.15        # within this * ATR of the line = interacting with it
 STOP_BUFFER_ATR = 0.15  # stop placed this * ATR beyond the safety line
 MIN_STOP_ATR = 0.50     # reject setups whose stop sits inside routine noise
+MAX_STOP_ATR = 2.50     # reject "high-risk" setups: safety line too far away
+                        # (this IS the strategy's high-risk-vs-low-risk rule)
 MIN_RR = 2.0            # reward:risk gate
+MAX_TARGET_RR = 4.0     # cap projected target reach for a day trade; a distant
+                        # HTF zone beyond this is not used as the day-trade target
 ABS_Z_MIN = 2.0         # medium/big bubble threshold (|z| >= this)
 
 
@@ -241,33 +245,37 @@ def evaluate(
     risk_points = abs(entry - stop)
     if risk_points < MIN_STOP_ATR * atr:
         return None  # stop inside noise
+    if risk_points > MAX_STOP_ATR * atr:
+        return None  # safety line too far -> a "high-risk setup", skip it
 
-    # Target: prefer a real opposing level (structural, honest reward). If none
-    # exists in open space, fall back to a projected MIN_RR target so a clean
-    # A- break is not silently dropped just because auto-detection found no
-    # discrete level ahead.
+    # Target: prefer a real opposing level (structural, honest reward) IF it is
+    # within a realistic day-trade reach (<= MAX_TARGET_RR). A distant HTF
+    # accumulation zone is not a day-trade target, so beyond that we cap the
+    # target at a projected MAX_TARGET_RR multiple instead.
+    cap_points = MAX_TARGET_RR * risk_points
     level_target = _nearest_opposing_level(entry, direction, structure)
-    used_level_target = False
-    if level_target is not None and (
-        (direction is Direction.LONG and level_target > entry)
-        or (direction is Direction.SHORT and level_target < entry)
-    ):
+    level_reach = abs(level_target - entry) if level_target is not None else None
+    level_ok = (
+        level_target is not None
+        and (
+            (direction is Direction.LONG and level_target > entry)
+            or (direction is Direction.SHORT and level_target < entry)
+        )
+        and MIN_RR * risk_points <= level_reach <= cap_points
+    )
+    if level_ok:
         target = level_target
-        reward_points = abs(target - entry)
-        rr = reward_points / risk_points if risk_points > 0 else 0.0
-        if rr >= MIN_RR:
-            used_level_target = True
-        else:
-            # level too close for min R:R -> project instead
-            target = entry + MIN_RR * risk_points if direction is Direction.LONG else entry - MIN_RR * risk_points
-            reward_points = abs(target - entry)
-            rr = MIN_RR
-            reasons.append("PROJECTED_TARGET_LEVEL_TOO_CLOSE")
+        reasons.append("LEVEL_TARGET")
     else:
-        target = entry + MIN_RR * risk_points if direction is Direction.LONG else entry - MIN_RR * risk_points
-        reward_points = abs(target - entry)
-        rr = MIN_RR
-        reasons.append("PROJECTED_TARGET_NO_LEVEL")
+        # project a capped target; require at least MIN_RR of clean room to it
+        proj = MIN_RR * risk_points
+        if direction is Direction.LONG:
+            target = entry + proj
+        else:
+            target = entry - proj
+        reasons.append("PROJECTED_TARGET")
+    reward_points = abs(target - entry)
+    rr = reward_points / risk_points if risk_points > 0 else 0.0
 
     # --- context: is price inside a zone? ---
     zone = structure.zone_containing(entry)
