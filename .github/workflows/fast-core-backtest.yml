@@ -5,6 +5,7 @@ on:
     branches: [feature/data-foundation]
     paths:
       - 'scripts/run_fast_core_backtest.py'
+      - 'scripts/diagnose_core_backtest.py'
       - 'src/backtest/**'
       - 'src/market/**'
       - 'src/risk/**'
@@ -23,6 +24,10 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: pip install requests pandas
+      - name: Diagnose core gates
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/diagnose_core_backtest.py
       - name: Run fast core backtest
         env:
           PYTHONPATH: ${{ github.workspace }}
