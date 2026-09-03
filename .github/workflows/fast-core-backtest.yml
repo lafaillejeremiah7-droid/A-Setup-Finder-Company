@@ -5,6 +5,7 @@ on:
     branches: [feature/data-foundation]
     paths:
       - 'scripts/run_fast_core_backtest.py'
+      - 'scripts/run_fast_core_backtest_fixed.py'
       - 'scripts/diagnose_core_backtest.py'
       - 'src/backtest/**'
       - 'src/market/**'
@@ -28,14 +29,25 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python scripts/diagnose_core_backtest.py
-      - name: Run fast core backtest
+      - name: Run original core backtest
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: python scripts/run_fast_core_backtest.py
-      - name: Upload core backtest
+      - name: Run fixed core backtest
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python scripts/run_fast_core_backtest_fixed.py
+      - name: Upload original core backtest
         uses: actions/upload-artifact@v4
         with:
           name: fast-core-backtest
           path: fast_core_artifact/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload fixed core backtest
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-core-backtest-fixed
+          path: fast_core_fixed_artifact/
           if-no-files-found: error
           retention-days: 14
