@@ -19,13 +19,17 @@ class SetupState(str, Enum):
 
 @dataclass(frozen=True)
 class LifecycleConfig:
-    """Rules for sequencing location -> absorption -> later confirmation.
+    """Rules for sequencing location -> optional absorption -> confirmation.
 
     Confirmation is deliberately required on a later completed bar than the
-    absorption event. `max_confirmation_bars` is a hypothesis and must be tested.
+    arming event. `max_confirmation_bars` is a hypothesis and must be tested.
+    `require_absorption` exists specifically so matched ablation runs can compare
+    the same setup logic with absorption OFF versus REQUIRED without rewriting
+    the lifecycle itself.
     """
 
     max_confirmation_bars: int = 6
+    require_absorption: bool = True
 
 
 @dataclass(frozen=True)
@@ -70,11 +74,12 @@ class LifecycleEvent:
 class SetupLifecycle:
     """Stateful, closed-bar GIBRC setup sequencer.
 
-    A setup arms only when location and directionally-correct absorption occur
-    on the same completed bar. It can confirm only on a later completed bar.
-    Opposite structural invalidation, a close through the setup invalidation,
-    or expiry kills the setup. A new setup receives a deterministic identity so
-    downstream alert/execution deduplication can operate at setup level.
+    With absorption required, a setup arms only when location and directionally
+    correct absorption occur on the same completed bar. With absorption disabled,
+    location alone arms the candidate; this is for controlled ablation, not a claim
+    that absorption is useless. Confirmation can occur only on a later completed
+    bar. Invalidation or expiry kills the setup. Each armed setup receives a
+    deterministic identity for setup-level deduplication.
     """
 
     def __init__(self, config: LifecycleConfig = LifecycleConfig()) -> None:
@@ -82,7 +87,6 @@ class SetupLifecycle:
             raise ValueError("MAX_CONFIRMATION_BARS_MUST_BE_POSITIVE")
         self.config = config
         self._armed: ArmedSetup | None = None
-        self._last_terminal_setup_id: str | None = None
 
     @property
     def armed(self) -> ArmedSetup | None:
@@ -120,7 +124,12 @@ class SetupLifecycle:
             absorption=obs.absorption,
         )
         self._armed = setup
-        return LifecycleEvent(SetupState.ARMED, setup, "LOCATION_AND_ABSORPTION_ARMED", False)
+        reason = (
+            "LOCATION_AND_ABSORPTION_ARMED"
+            if self.config.require_absorption
+            else "LOCATION_ARMED_ABSORPTION_OFF"
+        )
+        return LifecycleEvent(SetupState.ARMED, setup, reason, False)
 
     def update(self, obs: SetupObservation) -> LifecycleEvent:
         if obs.index < 0:
@@ -131,16 +140,18 @@ class SetupLifecycle:
         setup = self._armed
 
         if setup is None:
-            bullish_arm = (
-                obs.bullish_location
-                and obs.absorption.side is AbsorptionSide.BUYING
+            bullish_absorption_ok = (
+                not self.config.require_absorption
+                or obs.absorption.side is AbsorptionSide.BUYING
             )
-            bearish_arm = (
-                obs.bearish_location
-                and obs.absorption.side is AbsorptionSide.SELLING
+            bearish_absorption_ok = (
+                not self.config.require_absorption
+                or obs.absorption.side is AbsorptionSide.SELLING
             )
+            bullish_arm = obs.bullish_location and bullish_absorption_ok
+            bearish_arm = obs.bearish_location and bearish_absorption_ok
 
-            # Ambiguous simultaneous long+short location is not guessed.
+            # If both directional locations are simultaneously valid, do not guess.
             if bullish_arm and bearish_arm:
                 return LifecycleEvent(
                     SetupState.IDLE, None, "AMBIGUOUS_BOTH_DIRECTIONS_ARMABLE", False
@@ -158,7 +169,6 @@ class SetupLifecycle:
         if bars_since_arm > self.config.max_confirmation_bars:
             expired = setup
             self._armed = None
-            self._last_terminal_setup_id = expired.setup_id
             return LifecycleEvent(SetupState.EXPIRED, expired, "CONFIRMATION_WINDOW_EXPIRED", False)
 
         if setup.direction is TradeDirection.LONG:
@@ -173,7 +183,6 @@ class SetupLifecycle:
         if invalidated or opposite_confirmation:
             dead = setup
             self._armed = None
-            self._last_terminal_setup_id = dead.setup_id
             reason = (
                 "STRUCTURAL_INVALIDATION_PRICE_BREACHED"
                 if invalidated
@@ -184,7 +193,6 @@ class SetupLifecycle:
         if confirmed:
             done = setup
             self._armed = None
-            self._last_terminal_setup_id = done.setup_id
             return LifecycleEvent(
                 SetupState.CONFIRMED,
                 done,
