@@ -2,6 +2,12 @@
 
 A rule-based MGC futures signal system designed to identify high-quality LONG / SHORT setups while respecting the active prop-firm account rules.
 
+## Core Technology
+
+The company backend, strategy engine, data-processing layer, risk engine, backtesting system, and future dashboard API will be built in **Python 3**.
+
+Tradovate-specific front-end/custom-indicator code may still require JavaScript if Tradovate itself requires it, but the company's source-of-truth logic remains Python.
+
 ## Objective
 
 The system analyzes:
@@ -155,15 +161,17 @@ Exact formulas, parameters, assumptions, and testable thresholds belong in `docs
 ## Development Stages
 
 1. Freeze mathematical definitions in Strategy Spec v1
-2. Build MGC analysis engine
-3. Build DXY filter
-4. Build signal / risk engine
-5. Backtest without look-ahead bias
-6. Run live in paper / shadow mode
-7. Integrate validated signals with Tradovate
+2. Build Python market-data foundation
+3. Build MGC analysis engine
+4. Build DXY filter
+5. Build signal / risk engine
+6. Backtest without look-ahead bias
+7. Run live in paper / shadow mode
+8. Build dashboard/API layer
+9. Integrate validated signals with Tradovate
 
 ## Current Status
 
-**Phase 1: Strategy specification.**
+**Phase 1: Python data foundation + strategy specification.**
 
 Do not treat the system as production-ready until its rules have been implemented, tested, backtested, and validated in live shadow mode.
