@@ -44,12 +44,13 @@ def compose_signal(
     trade_plan: TradePlan,
     risk: RiskDecision,
     require_absorption: bool = True,
+    require_dxy: bool = True,
 ) -> SignalResult:
     """Combine already-computed deterministic setup components.
 
-    ``require_absorption`` defaults to True so direct/live callers retain the
-    strict production behavior. Research candidate generation sets it False so
-    OFF / REQUIRED / RANK_ONLY can be applied exactly once by the ablation layer.
+    The strict/live defaults require both absorption and DXY confirmation.
+    Research callers can disable either gate so their incremental value can be
+    measured without changing location, structure, stop, target, or risk math.
     """
     if not symbol.strip():
         raise ValueError("SYMBOL_REQUIRED")
@@ -64,12 +65,12 @@ def compose_signal(
     if direction is TradeDirection.LONG:
         if require_absorption and absorption.side is not AbsorptionSide.BUYING:
             reasons.append("SELL_SIDE_ABSORPTION_REQUIRED")
-        if not dxy_supports_gold_long(dxy):
+        if require_dxy and not dxy_supports_gold_long(dxy):
             reasons.append("DXY_NOT_BEARISH")
     else:
         if require_absorption and absorption.side is not AbsorptionSide.SELLING:
             reasons.append("BUY_SIDE_ABSORPTION_REQUIRED")
-        if not dxy_supports_gold_short(dxy):
+        if require_dxy and not dxy_supports_gold_short(dxy):
             reasons.append("DXY_NOT_BULLISH")
 
     if trade_plan.direction is not direction:
@@ -117,6 +118,14 @@ def compose_signal(
         )
 
     action = SignalAction.LONG if direction is TradeDirection.LONG else SignalAction.SHORT
+    if require_absorption and require_dxy:
+        pass_reason = "ALL_SIGNAL_GATES_PASS"
+    elif require_dxy:
+        pass_reason = "CORE_PLUS_DXY_GATES_PASS"
+    elif require_absorption:
+        pass_reason = "CORE_PLUS_ABSORPTION_GATES_PASS"
+    else:
+        pass_reason = "CORE_SIGNAL_GATES_PASS"
     return SignalResult(
         timestamp=timestamp,
         symbol=symbol,
@@ -128,5 +137,5 @@ def compose_signal(
         dollar_risk=risk.total_risk,
         rr=trade_plan.rr,
         dxy_state=dxy.state.value,
-        reasons=("CORE_SIGNAL_GATES_PASS" if not require_absorption else "ALL_SIGNAL_GATES_PASS",),
+        reasons=(pass_reason,),
     )
