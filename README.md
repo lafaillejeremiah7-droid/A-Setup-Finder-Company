@@ -4,9 +4,9 @@ A rule-based MGC futures signal system designed to identify high-quality LONG / 
 
 ## Core Technology
 
-The company backend, strategy engine, data-processing layer, risk engine, backtesting system, and future dashboard API will be built in **Python 3**.
+The company backend, strategy engine, data-processing layer, risk engine, backtesting system, and future dashboard API are built in **Python 3**.
 
-Tradovate-specific front-end/custom-indicator code may still require JavaScript if Tradovate itself requires it, but the company's source-of-truth logic remains Python.
+Tradovate is used only for **manual trade execution**. The company does not require a Tradovate custom indicator and does not use JavaScript for strategy logic.
 
 ## Objective
 
@@ -41,10 +41,12 @@ Every approved LONG/SHORT signal must include:
 
 Responsible for:
 
-- Swing highs / lows
-- Market structure
-- Trendlines
-- Support / resistance
+- ATR / volatility normalization
+- Confirmed swing highs / lows
+- HH / HL / LH / LL market structure
+- Break of structure confirmation
+- Trendlines and interactions
+- Support / resistance zones and interactions
 - Absorption
 - Bullish / bearish confirmation
 
@@ -148,6 +150,7 @@ Exact formulas, parameters, assumptions, and testable thresholds belong in `docs
 
 ## Design Principles
 
+- Python 3 is the source-of-truth implementation language
 - No subjective chart interpretation inside the signal engine
 - No look-ahead bias
 - No repainting confirmed historical signals
@@ -157,6 +160,7 @@ Exact formulas, parameters, assumptions, and testable thresholds belong in `docs
 - `NO TRADE` is a valid and expected output
 - Every signal must be explainable from its underlying rule results
 - Hypothesized thresholds must be distinguished from empirically validated thresholds
+- Tradovate execution remains manual
 
 ## Development Stages
 
@@ -168,10 +172,12 @@ Exact formulas, parameters, assumptions, and testable thresholds belong in `docs
 6. Backtest without look-ahead bias
 7. Run live in paper / shadow mode
 8. Build dashboard/API layer
-9. Integrate validated signals with Tradovate
+9. Use validated dashboard signals for manual execution in Tradovate
 
 ## Current Status
 
-**Phase 1: Python data foundation + strategy specification.**
+**Phase 2: Python market-structure engine in development.**
 
-Do not treat the system as production-ready until its rules have been implemented, tested, backtested, and validated in live shadow mode.
+Implemented foundation includes ATR, confirmed pivots with explicit confirmation delay, market-structure classification, BOS checks, trendline construction/interactions, and support/resistance zone clustering/interactions.
+
+Do not treat the system as production-ready until its remaining rules have been implemented, tested, backtested, and validated in live shadow mode.
