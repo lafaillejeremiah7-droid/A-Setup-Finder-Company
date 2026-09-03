@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the source of truth for the A+ Setup Finder Company. Every live signal, backtest, and Tradovate integration must implement the same definitions.
+This document is the source of truth for the A+ Setup Finder Company. Every live signal and backtest must implement the same definitions. Tradovate remains manual execution only.
 
 Status labels:
 
@@ -28,6 +28,8 @@ For completed bar `t`:
 - `T[t]`: timestamp
 
 Structural confirmation uses completed bars. Intrabar order-flow measurements may update live but cannot retroactively turn an unconfirmed historical structure event into a confirmed one.
+
+For historical replay, `T[t]` supplied to the backtest engine must represent the **completion time** of the bar. If a vendor supplies bar-open timestamps, the ingestion layer must convert them before replay so synchronized MGC/DX visibility cannot leak future information.
 
 ## 2. ATR / Volatility — LOCKED + HYPOTHESIS
 
@@ -231,6 +233,8 @@ SHORT trigger is symmetric.
 
 V1 entry price = close of the completed confirmation bar **(HYPOTHESIS to compare against next-open/retest execution)**.
 
+Historical validation must compare this specification with an explicit `NEXT_BAR_OPEN` execution scenario. The bar-level backtest engine may model both, but a signal-close backtest must never use the signal-generating bar's earlier high/low as a post-entry stop/target outcome.
+
 ## 14. Invalidation / Stop Loss — LOCKED + HYPOTHESIS
 
 LONG invalidation anchor = setup swing low / structural low responsible for the setup.
@@ -276,6 +280,8 @@ Price movement of `1.0` = approximately `$10` per MGC contract; minimum `0.1` pr
 `TotalRisk = RiskPerContract * Contracts`
 
 Initial minimum `RR = 2.0` **(HYPOTHESIS)**.
+
+Formal backtests must add explicit slippage and commission/fee assumptions. A stop gap must be modeled at the first available tradable price rather than pretending every stop fills exactly at the stop level.
 
 ## 17. Prop-Firm Risk Rules — CONFIGURATION + LOCKED ENGINE BEHAVIOR
 
@@ -342,16 +348,20 @@ Duplicate alerts for the same confirmed setup must be suppressed until that setu
 3. Closed-bar structure rules remain closed-bar rules in both backtest and live operation.
 4. Backtest and live engines must call the same strategy functions.
 5. Unknown/missing data produces `NO_TRADE`, never a guessed LONG/SHORT.
-6. Absorption cannot be declared implemented until the required order-flow data has been verified.
+6. Absorption cannot be declared production-validated until the required order-flow data has been verified.
 7. Hypothesis thresholds must be configurable and tested rather than silently treated as proven.
+8. Historical replay must expose only bars completed at the simulated historical instant.
+9. OHLC same-bar stop/target ambiguity must not be silently resolved in the strategy's favor; conservative handling or tick replay is required.
+10. Execution costs must be explicit in formal performance claims.
 
-# Next Validation Gate
+# Current Validation Gate
 
-Before coding the signal engine, verify the exact data path for:
+Before empirical claims about GIBRC expectancy, verify the exact historical/live-compatible data path for:
 
 1. MGC OHLCV
 2. MGC bid/ask or footprint/order-flow data needed for absorption
-3. DXY OHLC data
+3. DXY/DX OHLC data
 4. Live account/risk information needed to enforce the prop rules
+5. contract/roll handling and timestamp convention
 
-Once these inputs are verified, implementation can begin without changing the meaning of the strategy.
+The repository now contains deterministic strategy primitives and a no-lookahead bar-level backtest harness. The next implementation milestone is the exact stateful setup lifecycle that connects location -> absorption -> later confirmation -> trade plan -> risk -> final signal during replay, followed by out-of-sample and cost-stress validation on clean data.
