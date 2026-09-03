@@ -10,16 +10,16 @@ from src.market.dxy import evaluate_dxy_state
 from src.market.market_structure import (
     Pivot,
     PivotType,
+    SRRole,
     StructureConfig,
     bearish_bos,
     bullish_bos,
-    cluster_price_zones,
+    build_sr_levels,
     detect_confirmed_pivots,
-    latest_valid_trendline,
     pivots_known_by,
-    trendline_touch,
+    price_at_resistance,
+    price_at_support,
     wilder_atr,
-    zone_touched,
 )
 from src.market.trade_plan import TradeDirection, TradePlanConfig, build_trade_plan
 from src.risk.prop_risk import AccountState, PropFirmRules, assess_prop_risk
@@ -80,64 +80,38 @@ class GIBRCReplayProvider:
         bar = bars[index]
         cfg = self.config.structure
 
-        support_zones = cluster_price_zones(
+        sr_levels = build_sr_levels(
             known_pivots,
-            PivotType.LOW,
+            bars[: index + 1],
             atr,
-            cluster_atr=cfg.sr_cluster_atr,
-            half_width_atr=cfg.sr_half_width_atr,
+            break_buffer_atr=cfg.sr_break_buffer_atr,
         )
-        resistance_zones = cluster_price_zones(
-            known_pivots,
-            PivotType.HIGH,
-            atr,
-            cluster_atr=cfg.sr_cluster_atr,
-            half_width_atr=cfg.sr_half_width_atr,
-        )
-        bullish_location = any(zone_touched(bar, zone) for zone in support_zones)
-        bearish_location = any(zone_touched(bar, zone) for zone in resistance_zones)
-
-        bullish_line = latest_valid_trendline(known_pivots, PivotType.LOW)
-        bearish_line = latest_valid_trendline(known_pivots, PivotType.HIGH)
-        if bullish_line is not None:
-            bullish_location = bullish_location or trendline_touch(
-                bar, index, bullish_line, atr, cfg.trendline_touch_atr
-            )
-        if bearish_line is not None:
-            bearish_location = bearish_location or trendline_touch(
-                bar, index, bearish_line, atr, cfg.trendline_touch_atr
-            )
+        bullish_location = price_at_support(bar, sr_levels, atr, cfg.sr_half_width_atr)
+        bearish_location = price_at_resistance(bar, sr_levels, atr, cfg.sr_half_width_atr)
         return bullish_location, bearish_location
 
     def _target_candidates(
         self,
         *,
+        bars: Sequence,
+        index: int,
         known_pivots: Sequence[Pivot],
         atr: float,
         direction: TradeDirection,
     ) -> list[float]:
         cfg = self.config.structure
-        if direction is TradeDirection.LONG:
-            zones = cluster_price_zones(
-                known_pivots,
-                PivotType.HIGH,
-                atr,
-                cluster_atr=cfg.sr_cluster_atr,
-                half_width_atr=cfg.sr_half_width_atr,
-            )
-            return [pivot.price for pivot in known_pivots if pivot.kind is PivotType.HIGH] + [
-                zone.lower for zone in zones
-            ]
-        zones = cluster_price_zones(
+        sr_levels = build_sr_levels(
             known_pivots,
-            PivotType.LOW,
+            bars[: index + 1],
             atr,
-            cluster_atr=cfg.sr_cluster_atr,
-            half_width_atr=cfg.sr_half_width_atr,
+            break_buffer_atr=cfg.sr_break_buffer_atr,
         )
-        return [pivot.price for pivot in known_pivots if pivot.kind is PivotType.LOW] + [
-            zone.upper for zone in zones
-        ]
+        if direction is TradeDirection.LONG:
+            # Nearest active resistance levels above current price
+            return [lvl.price for lvl in sr_levels if lvl.role is SRRole.RESISTANCE]
+        else:
+            # Nearest active support levels below current price
+            return [lvl.price for lvl in sr_levels if lvl.role is SRRole.SUPPORT]
 
     def candidate(self, context: BacktestContext) -> CandidateSignal | None:
         bars = context.mgc
@@ -220,6 +194,8 @@ class GIBRCReplayProvider:
 
         direction = event.setup.direction
         targets = self._target_candidates(
+            bars=bars,
+            index=index,
             known_pivots=known,
             atr=atr,
             direction=direction,

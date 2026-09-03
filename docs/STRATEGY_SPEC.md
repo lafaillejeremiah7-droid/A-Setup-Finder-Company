@@ -124,35 +124,46 @@ Initial `TL_BREAK_ATR = 0.20` **(HYPOTHESIS)**.
 
 A new independent touch cannot be counted until price has moved at least `0.50 * ATR` away from the line **(HYPOTHESIS)**.
 
-## 8. Support / Resistance — LOCKED + HYPOTHESIS
+## 8. Support / Resistance — LOCKED
 
-Support is formed from a cluster of at least two confirmed swing lows.
+Every confirmed swing pivot creates a price level with market memory:
 
-Resistance is formed from a cluster of at least two confirmed swing highs.
+- A confirmed **swing low** originates as **support** — price reversed up there; buyers defended it.
+- A confirmed **swing high** originates as **resistance** — price reversed down there; sellers defended it.
 
-Pivots may belong to the same cluster when their normalized price distance is no greater than:
+A level remains active in its current role until price closes convincingly through it.
 
-`SR_CLUSTER_ATR * ATR`
+**Role reversal (LOCKED):**
 
-Initial `SR_CLUSTER_ATR = 0.25` **(HYPOTHESIS)**.
+When a completed bar closes below a support level by more than `SR_BREAK_BUFFER`:
 
-Zone center v1 = arithmetic mean of member pivot prices.
+`bar.close < level.price - SR_BREAK_BUFFER`
+
+that level **flips to resistance** — buyers who held it are now trapped, the level now acts as a ceiling on any retrace.
+
+When a completed bar closes above a resistance level by more than `SR_BREAK_BUFFER`:
+
+`bar.close > level.price + SR_BREAK_BUFFER`
+
+that level **flips to support** — sellers who held it are now trapped, the level now acts as a floor on any retrace.
+
+A level that has flipped role retains the same price and continues to be active in its new role until flipped again. Every confirmed pivot contributes exactly one level; no minimum cluster count is required.
+
+Initial `SR_BREAK_BUFFER = 0.05 * ATR` **(HYPOTHESIS)**.
 
 ## 9. S/R Interaction — LOCKED + HYPOTHESIS
 
-Initial half-width:
+Price is considered **at a level** when the candle range trades within `SR_HALF_WIDTH` of the level price:
 
-`SR_HALF_WIDTH = 0.20 * ATR` **(HYPOTHESIS)**.
+`bar.low <= level.price + SR_HALF_WIDTH` AND `bar.high >= level.price - SR_HALF_WIDTH`
 
-Touch occurs when the candle range intersects the zone.
+Initial `SR_HALF_WIDTH = 0.20 * ATR` **(HYPOTHESIS)**.
 
-Resistance break requires a completed close above the upper boundary plus `0.05 * ATR` **(HYPOTHESIS)**.
+**Bullish location** = price action at a level currently acting as **support** (price returning to a prior swing low, or a prior resistance level that has since flipped to support after a confirmed break above it).
 
-Support break requires a completed close below the lower boundary minus the same buffer.
+**Bearish location** = price action at a level currently acting as **resistance** (price returning to a prior swing high, or a prior support level that has since flipped to resistance after a confirmed break below it).
 
-Bullish location = active support and/or valid bullish trendline interaction.
-
-Bearish location = active resistance and/or valid bearish trendline interaction.
+Trendline touch is not a location qualifier. Location is determined by price action at confirmed S/R levels only.
 
 ## 10. Order-Flow Aggression — LOCKED / DATA-DEPENDENT
 

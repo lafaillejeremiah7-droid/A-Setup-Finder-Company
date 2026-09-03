@@ -346,3 +346,137 @@ def zone_broken(bar: MarketBar, zone: PriceZone, atr: float, buffer_atr: float =
     if zone.kind is PivotType.HIGH:
         return bar.close > zone.upper + buffer
     return bar.close < zone.lower - buffer
+
+
+# ---------------------------------------------------------------------------
+# True price-action S/R: pivot levels that are active until broken, with
+# role reversal on a confirmed close through the level.
+# ---------------------------------------------------------------------------
+
+class SRRole(str, Enum):
+    SUPPORT = "SUPPORT"
+    RESISTANCE = "RESISTANCE"
+
+
+@dataclass(frozen=True)
+class SRLevel:
+    """A single confirmed pivot level and its current market role.
+
+    A swing low originates as support; a swing high originates as resistance.
+    Once price closes convincingly through a level (by more than break_buffer),
+    the level flips role: broken support becomes resistance, broken resistance
+    becomes support.  A level stays active in its current role until flipped
+    again, giving each pivot level persistent market memory.
+    """
+    price: float
+    role: SRRole
+    origin_pivot: Pivot
+    broken: bool  # True once role has been flipped at least once
+
+
+def build_sr_levels(
+    pivots: Sequence[Pivot],
+    bars: Sequence[MarketBar],
+    atr: float,
+    break_buffer_atr: float = 0.05,
+) -> list[SRLevel]:
+    """Build the list of active S/R levels from confirmed pivots.
+
+    Algorithm (closed-bar, no lookahead):
+    1. Each confirmed swing low starts as SUPPORT; each swing high as RESISTANCE.
+    2. Walk bars in time order. For every completed bar, check every level:
+       - A SUPPORT level is broken when bar.close < level.price - buffer.
+         It flips to RESISTANCE.
+       - A RESISTANCE level is broken when bar.close > level.price + buffer.
+         It flips to SUPPORT.
+    3. A pivot is only introduced once its confirmed_at_index has been reached.
+    4. Returns the state of all levels as of the last bar in `bars`.
+
+    Only confirmed pivots (already in the supplied `pivots` list) are used, so
+    there is no lookahead. The caller must pre-filter pivots via pivots_known_by
+    before passing them here.
+    """
+    if atr <= 0:
+        raise ValueError("ATR_MUST_BE_POSITIVE")
+
+    buffer = break_buffer_atr * atr
+
+    # Build a mutable working set: price -> (role, origin_pivot, broken)
+    # Using list to preserve insertion order and allow mutation.
+    class _MutableLevel:
+        def __init__(self, price: float, role: SRRole, pivot: Pivot) -> None:
+            self.price = price
+            self.role = role
+            self.pivot = pivot
+            self.broken = False
+
+    levels: list[_MutableLevel] = []
+    # Index pivot list by confirmed_at_index for efficient introduction
+    pivot_by_confirm: dict[int, list[Pivot]] = {}
+    for pivot in pivots:
+        pivot_by_confirm.setdefault(pivot.confirmed_at_index, []).append(pivot)
+
+    for bar_index, bar in enumerate(bars):
+        # Introduce any pivots confirmed by this bar
+        for pivot in pivot_by_confirm.get(bar_index, []):
+            initial_role = SRRole.SUPPORT if pivot.kind is PivotType.LOW else SRRole.RESISTANCE
+            levels.append(_MutableLevel(pivot.price, initial_role, pivot))
+
+        # Update roles based on this bar's close
+        for level in levels:
+            if level.role is SRRole.SUPPORT and bar.close < level.price - buffer:
+                level.role = SRRole.RESISTANCE
+                level.broken = True
+            elif level.role is SRRole.RESISTANCE and bar.close > level.price + buffer:
+                level.role = SRRole.SUPPORT
+                level.broken = True
+
+    return [
+        SRLevel(
+            price=lvl.price,
+            role=lvl.role,
+            origin_pivot=lvl.pivot,
+            broken=lvl.broken,
+        )
+        for lvl in levels
+    ]
+
+
+def price_at_support(
+    bar: MarketBar,
+    levels: Sequence[SRLevel],
+    atr: float,
+    half_width_atr: float = 0.20,
+) -> bool:
+    """Return True when the bar's range reaches an active support level.
+
+    Price is considered 'at' a level when the candle low trades within
+    half_width_atr * ATR of the level price — i.e. the candle is testing
+    the level from above.  Only levels currently acting as SUPPORT qualify.
+    """
+    half_width = half_width_atr * atr
+    for level in levels:
+        if level.role is SRRole.SUPPORT:
+            if bar.low <= level.price + half_width and bar.high >= level.price - half_width:
+                return True
+    return False
+
+
+def price_at_resistance(
+    bar: MarketBar,
+    levels: Sequence[SRLevel],
+    atr: float,
+    half_width_atr: float = 0.20,
+) -> bool:
+    """Return True when the bar's range reaches an active resistance level.
+
+    Price is considered 'at' a level when the candle high trades within
+    half_width_atr * ATR of the level price — i.e. the candle is testing
+    the level from below.  Only levels currently acting as RESISTANCE qualify.
+    """
+    half_width = half_width_atr * atr
+    for level in levels:
+        if level.role is SRRole.RESISTANCE:
+            if bar.high >= level.price - half_width and bar.low <= level.price + half_width:
+                return True
+    return False
