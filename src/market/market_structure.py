@@ -61,6 +61,7 @@ class StructureConfig:
     bos_buffer_atr: float = 0.05
     trendline_touch_atr: float = 0.15
     trendline_break_atr: float = 0.20
+    trendline_rearm_atr: float = 0.50
     sr_cluster_atr: float = 0.25
     sr_half_width_atr: float = 0.20
     sr_break_buffer_atr: float = 0.05
@@ -213,6 +214,62 @@ def trendline_touch(
 ) -> bool:
     interaction_price = bar.low if trendline.kind is PivotType.LOW else bar.high
     return abs(interaction_price - trendline.value_at(bar_index)) <= touch_atr * atr
+
+
+def trendline_rearmed_since(
+    bars: Sequence[MarketBar],
+    start_index: int,
+    end_index: int,
+    trendline: Trendline,
+    atr_values: Sequence[float | None],
+    rearm_atr: float = 0.50,
+) -> bool:
+    """Return True once price moved far enough away after a prior touch.
+
+    This implements Strategy Spec Section 7's independent-touch rule. The
+    distance is measured from the candle extreme used by that trendline type.
+    """
+    if start_index < 0 or end_index > len(bars) or end_index > len(atr_values):
+        raise ValueError("INVALID_REARM_RANGE")
+    for index in range(start_index, end_index):
+        atr = atr_values[index]
+        if atr is None or atr <= 0:
+            continue
+        line_value = trendline.value_at(index)
+        interaction_price = bars[index].low if trendline.kind is PivotType.LOW else bars[index].high
+        if abs(interaction_price - line_value) >= rearm_atr * atr:
+            return True
+    return False
+
+
+def independent_trendline_touch(
+    bars: Sequence[MarketBar],
+    bar_index: int,
+    trendline: Trendline,
+    atr_values: Sequence[float | None],
+    previous_touch_index: int | None,
+    touch_atr: float = 0.15,
+    rearm_atr: float = 0.50,
+) -> bool:
+    if bar_index < 0 or bar_index >= len(bars) or bar_index >= len(atr_values):
+        raise ValueError("INVALID_BAR_INDEX")
+    atr = atr_values[bar_index]
+    if atr is None or atr <= 0:
+        return False
+    if not trendline_touch(bars[bar_index], bar_index, trendline, atr, touch_atr):
+        return False
+    if previous_touch_index is None:
+        return True
+    if previous_touch_index >= bar_index:
+        return False
+    return trendline_rearmed_since(
+        bars,
+        previous_touch_index + 1,
+        bar_index,
+        trendline,
+        atr_values,
+        rearm_atr,
+    )
 
 
 def trendline_broken(
