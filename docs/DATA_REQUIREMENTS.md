@@ -38,7 +38,17 @@ Historical packets must be sorted and deduplicated before strategy use.
 
 Resting DOM size is **not** executed aggressive volume. The absorption model must use executed bid/offer bar volume and/or classified trade ticks. It must not treat DOM snapshots or ordinary total volume as absorption.
 
-**Status: REQUIRED SEMANTICS DEFINED; LIVE/HISTORICAL SOURCE ENTITLEMENT + SAMPLE STILL REQUIRE RUNTIME VERIFICATION.**
+### Verified Databento path
+
+Databento `GLBX.MDP3` supports MGC history well before the requested 2015 start. Its `trades` schema includes a trade `side` field where `A` means a seller aggressor and `B` means a buyer aggressor. For GIBRC aggregation:
+
+- `side=A` -> executed at bid -> `bid_volume`
+- `side=B` -> executed at ask -> `offer_volume`
+- `side=N` or any unknown side -> strict downloader rejects the affected data rather than inventing classification
+
+The downloader uses Databento volume-continuous symbology only to choose the actual tradable front contract. Databento documents that continuous-contract prices are original and unadjusted. The output keeps the actual mapped instrument ID in the canonical `contract` field, so no synthetic or back-adjusted price series is created.
+
+**Status: VERIFIED SOURCE SEMANTICS; USER ENTITLEMENT/API KEY AND FULL-SPAN SIDE COMPLETENESS MUST STILL BE TESTED AT RUNTIME.**
 
 ## DXY / USDX Data
 
@@ -48,7 +58,13 @@ Use the ICE U.S. Dollar Index futures contract `DX` as the v1 DXY filter source 
 
 Do not hard-code a perpetual contract month. Historical and live pipelines must resolve the appropriate contract and document roll logic.
 
-**Status: PRODUCT DEFINITION LOCKED; EXACT ACTIVE/HISTORICAL CONTRACT PATH REQUIRES DATA-SOURCE VERIFICATION.**
+### Verified Databento coverage limit
+
+Databento `IFUS.IMPACT` provides ICE Futures U.S. DX data beginning **2018-12-23 UTC**, not 2015. Databento normalizes ICE iMpact trade aggressor side when ICE specifies it, but ICE can publish trades where the aggressing side is unspecified; those normalize to `side=N` and must be rejected in strict absorption-grade aggregation.
+
+ICE Consolidated History publicly documents tick-by-tick historical coverage extending 10+ years / up to roughly 15 years depending on the offering. However, the public material checked for this project does **not** establish an export/API field contract guaranteeing aggressor-side classification for the 2015-2018 DX span. Under the project rule, that source is therefore not accepted yet for executed-side volume. It may be added only after a licensed sample/file specification proves the needed trade-side field.
+
+**Status: DATABENTO DX VERIFIED FROM 2018-12-23; 2015-2018 DX EXECUTED-SIDE SOURCE REMAINS UNVERIFIED AND MUST NOT BE FABRICATED.**
 
 ## Initial Timeframes
 
