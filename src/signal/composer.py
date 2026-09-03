@@ -43,12 +43,13 @@ def compose_signal(
     dxy: DxyState,
     trade_plan: TradePlan,
     risk: RiskDecision,
+    require_absorption: bool = True,
 ) -> SignalResult:
-    """Apply Strategy Spec Section 18 as a strict all-gates composer.
+    """Combine already-computed deterministic setup components.
 
-    This function does not discover a setup; it combines already-computed
-    deterministic components. Any failed, stale, mismatched, or unknown input
-    returns NO_TRADE rather than guessing.
+    ``require_absorption`` defaults to True so direct/live callers retain the
+    strict production behavior. Research candidate generation sets it False so
+    OFF / REQUIRED / RANK_ONLY can be applied exactly once by the ablation layer.
     """
     if not symbol.strip():
         raise ValueError("SYMBOL_REQUIRED")
@@ -61,12 +62,12 @@ def compose_signal(
         reasons.append("STRUCTURE_CONFIRMATION_FAIL")
 
     if direction is TradeDirection.LONG:
-        if absorption.side is not AbsorptionSide.BUYING:
+        if require_absorption and absorption.side is not AbsorptionSide.BUYING:
             reasons.append("SELL_SIDE_ABSORPTION_REQUIRED")
         if not dxy_supports_gold_long(dxy):
             reasons.append("DXY_NOT_BEARISH")
     else:
-        if absorption.side is not AbsorptionSide.SELLING:
+        if require_absorption and absorption.side is not AbsorptionSide.SELLING:
             reasons.append("BUY_SIDE_ABSORPTION_REQUIRED")
         if not dxy_supports_gold_short(dxy):
             reasons.append("DXY_NOT_BULLISH")
@@ -93,7 +94,6 @@ def compose_signal(
     ):
         reasons.append("RISK_PLAN_MISMATCH")
 
-    # Required price fields must all exist before an actionable signal can be emitted.
     if trade_plan.stop is None:
         reasons.append("STOP_MISSING")
     if trade_plan.target is None:
@@ -128,5 +128,5 @@ def compose_signal(
         dollar_risk=risk.total_risk,
         rr=trade_plan.rr,
         dxy_state=dxy.state.value,
-        reasons=("ALL_SIGNAL_GATES_PASS",),
+        reasons=("CORE_SIGNAL_GATES_PASS" if not require_absorption else "ALL_SIGNAL_GATES_PASS",),
     )
