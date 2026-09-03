@@ -64,16 +64,16 @@ def detect_absorption(
 ) -> AbsorptionSignal:
     """Detect a closed-bar absorption event using executed bid/offer volume.
 
-    Color semantics intentionally match the TradingView Absorption Bubbles
-    convention used as a visual reference:
-      RED lower-wick bubble = buyers absorb aggressive selling (bullish evidence)
-      GREEN upper-wick bubble = sellers absorb aggressive buying (bearish evidence)
+    RED lower-wick bubble = buyers absorb aggressive selling (bullish evidence).
+    GREEN upper-wick bubble = sellers absorb aggressive buying (bearish evidence).
 
-    The numerical thresholds remain hypotheses and must be validated on MGC.
-    Missing executed-side volume fails closed as UNKNOWN.
+    Numerical thresholds are hypotheses and must be validated on MGC.
+    Missing executed-side volume or insufficient clean history fails closed as UNKNOWN.
     """
     if config.lookback < 2:
         raise ValueError("ABSORPTION_LOOKBACK_TOO_SMALL")
+    if config.aggression_z_min <= 0:
+        raise ValueError("ABSORPTION_Z_THRESHOLD_MUST_BE_POSITIVE")
     if index < 0 or index >= len(bars):
         raise ValueError("INVALID_BAR_INDEX")
 
@@ -87,12 +87,31 @@ def detect_absorption(
             "EXECUTED_SIDE_VOLUME_MISSING",
         )
 
-    history_start = max(0, index - config.lookback)
+    # Require the entire configured lookback to exist and contain executed-side
+    # volume. A partial window can make a z-score look extreme simply because
+    # the sample is too small, so the detector fails closed instead.
+    if index < config.lookback:
+        return AbsorptionSignal(
+            AbsorptionSide.UNKNOWN,
+            BubbleColor.NONE,
+            None,
+            None,
+            "INSUFFICIENT_DELTA_HISTORY",
+        )
+
+    history_start = index - config.lookback
     history_deltas: list[float] = []
     for historical_bar in bars[history_start:index]:
         delta = bar_delta(historical_bar)
-        if delta is not None:
-            history_deltas.append(delta)
+        if delta is None:
+            return AbsorptionSignal(
+                AbsorptionSide.UNKNOWN,
+                BubbleColor.NONE,
+                None,
+                None,
+                "DELTA_HISTORY_INCOMPLETE",
+            )
+        history_deltas.append(delta)
 
     current_delta = bar_delta(bar)
     assert current_delta is not None
@@ -103,7 +122,7 @@ def detect_absorption(
             BubbleColor.NONE,
             None,
             None,
-            "INSUFFICIENT_DELTA_HISTORY",
+            "DELTA_HISTORY_HAS_NO_VARIANCE",
         )
 
     candle_range = bar.high - bar.low
@@ -122,8 +141,12 @@ def detect_absorption(
     upper_wick_fraction = max(0.0, bar.high - body_high) / candle_range
     lower_wick_fraction = max(0.0, body_low - bar.low) / candle_range
 
+    # A positive z-score alone does not guarantee positive delta if the history
+    # is strongly negative. Require the raw delta sign to agree with the claimed
+    # aggressive side so we never label net selling as aggressive buying, or vice versa.
     if (
-        aggression_z >= config.aggression_z_min
+        current_delta > 0
+        and aggression_z >= config.aggression_z_min
         and close_location <= config.max_close_location_for_selling_absorption
         and upper_wick_fraction >= config.min_rejection_wick_fraction
     ):
@@ -136,7 +159,8 @@ def detect_absorption(
         )
 
     if (
-        aggression_z <= -config.aggression_z_min
+        current_delta < 0
+        and aggression_z <= -config.aggression_z_min
         and close_location >= config.min_close_location_for_buying_absorption
         and lower_wick_fraction >= config.min_rejection_wick_fraction
     ):
