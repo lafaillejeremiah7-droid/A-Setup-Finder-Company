@@ -16,7 +16,13 @@ BASE = datetime(2026, 1, 2, 14, 30, tzinfo=timezone.utc)
 
 
 def absorption(side: AbsorptionSide) -> AbsorptionSignal:
-    color = BubbleColor.RED if side is AbsorptionSide.BUYING else BubbleColor.GREEN if side is AbsorptionSide.SELLING else BubbleColor.NONE
+    color = (
+        BubbleColor.RED
+        if side is AbsorptionSide.BUYING
+        else BubbleColor.GREEN
+        if side is AbsorptionSide.SELLING
+        else BubbleColor.NONE
+    )
     return AbsorptionSignal(side, color, 2.5, 0.5, "TEST")
 
 
@@ -63,10 +69,24 @@ class SetupLifecycleTests(unittest.TestCase):
         assert result.setup is not None
         self.assertEqual(result.setup.direction.value, "SHORT")
 
-    def test_wrong_absorption_does_not_arm(self) -> None:
+    def test_wrong_absorption_does_not_arm_when_required(self) -> None:
         lifecycle = SetupLifecycle()
         result = lifecycle.update(obs(1, bullish_location=True, side=AbsorptionSide.SELLING))
         self.assertEqual(result.state, SetupState.IDLE)
+
+    def test_location_can_arm_when_absorption_is_off_for_ablation(self) -> None:
+        lifecycle = SetupLifecycle(LifecycleConfig(require_absorption=False))
+        result = lifecycle.update(obs(1, bullish_location=True, side=AbsorptionSide.NONE))
+        self.assertEqual(result.state, SetupState.ARMED)
+        self.assertEqual(result.reason, "LOCATION_ARMED_ABSORPTION_OFF")
+
+    def test_ambiguous_dual_location_fails_closed_when_absorption_is_off(self) -> None:
+        lifecycle = SetupLifecycle(LifecycleConfig(require_absorption=False))
+        result = lifecycle.update(
+            obs(1, bullish_location=True, bearish_location=True, side=AbsorptionSide.NONE)
+        )
+        self.assertEqual(result.state, SetupState.IDLE)
+        self.assertEqual(result.reason, "AMBIGUOUS_BOTH_DIRECTIONS_ARMABLE")
 
     def test_invalidation_price_kills_long_before_confirmation(self) -> None:
         lifecycle = SetupLifecycle()
