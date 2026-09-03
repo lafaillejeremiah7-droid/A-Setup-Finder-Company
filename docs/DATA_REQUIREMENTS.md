@@ -4,55 +4,51 @@ This document records the verified v1 market-data path and the remaining runtime
 
 ## Decision
 
-Use **Tradovate market data for MGC and ICE U.S. Dollar Index futures (`DX`)** when the account's exchange entitlements expose those products.
+Use a verified futures data source for **MGC** and **ICE U.S. Dollar Index futures (`DX`)**. Tradovate remains manual execution only and is not required as the production market-data source if another source is selected and its semantics are verified.
 
-This keeps v1 on one market-data architecture and avoids silently mixing a TradingView cash-index feed with futures data.
+Do not silently mix incompatible data semantics across backtest and live operation.
 
 ## MGC Price + Order-Flow Data
 
 Required bar fields:
 
-- timestamp
+- completion timestamp
 - open
 - high
 - low
 - close
 - total volume
-- bid volume
-- offer volume
+- bid volume executed at bid
+- offer volume executed at ask
 
-Tradovate chart messages document bar-level `bidVolume` and `offerVolume`. These are the v1 inputs for bar-level delta and absorption research.
+For the existing bar-level absorption research, `bidVolume` / `offerVolume` or an equivalent verified executed-side classification is required.
 
-Required tick fields when tick-level refinement is enabled:
+Required tick/trade fields when tick-level refinement is enabled:
 
 - trade price
 - trade size
-- bid price / size
-- ask price / size
+- bid price / size, when available
+- ask price / size, when available
 - timestamp
-- tick id
+- stable sequence/tick identifier when available
 
-Tradovate tick-chart messages document trade price/size together with bid/ask information. Tick packets can arrive out of chronological order, so the ingestion layer must sort and deduplicate them before strategy use.
+Historical packets must be sorted and deduplicated before strategy use.
 
 ### Critical distinction
 
-Resting DOM size is **not** executed aggressive volume. The absorption model must use executed bid/offer bar volume and/or classified trade ticks. It must not treat DOM snapshots as absorption.
+Resting DOM size is **not** executed aggressive volume. The absorption model must use executed bid/offer bar volume and/or classified trade ticks. It must not treat DOM snapshots or ordinary total volume as absorption.
 
-**Status: DATA FIELDS VERIFIED IN DOCUMENTATION; ACCOUNT ENTITLEMENT + LIVE SAMPLE STILL REQUIRE RUNTIME CHECK.**
+**Status: REQUIRED SEMANTICS DEFINED; LIVE/HISTORICAL SOURCE ENTITLEMENT + SAMPLE STILL REQUIRE RUNTIME VERIFICATION.**
 
 ## DXY / USDX Data
 
-Use the ICE U.S. Dollar Index futures contract `DX` as the v1 DXY filter source.
-
-ICE publishes `DX` as the symbol for U.S. Dollar Index futures. Current Tradovate trading-products/rate materials include ICE U.S. products and list `DX` as U.S. Dollar Index.
-
-Therefore:
+Use the ICE U.S. Dollar Index futures contract `DX` as the v1 DXY filter source unless a later research version explicitly changes the source.
 
 `DXY_FILTER_SOURCE = DX futures`
 
-Do not hard-code a perpetual contract month. The live adapter must resolve the active DX futures contract through Tradovate metadata/roll logic.
+Do not hard-code a perpetual contract month. Historical and live pipelines must resolve the appropriate contract and document roll logic.
 
-**Status: PRODUCT PATH VERIFIED; EXACT ACTIVE CONTRACT + USER ENTITLEMENT REQUIRE RUNTIME RESOLUTION.**
+**Status: PRODUCT DEFINITION LOCKED; EXACT ACTIVE/HISTORICAL CONTRACT PATH REQUIRES DATA-SOURCE VERIFICATION.**
 
 ## Initial Timeframes
 
@@ -67,14 +63,45 @@ Do not hard-code a perpetual contract month. The live adapter must resolve the a
 
 These are configurable hypotheses and must be backtested.
 
+## Timestamp Semantics
+
+The no-lookahead backtest engine assumes every `MarketBar.timestamp` represents the **bar completion time**.
+
+If a vendor labels a candle by its opening time, the ingestion layer must convert or attach the true completion time before replay.
+
+Why this matters: at historical instant `t`, the engine exposes only MGC/DX bars whose completion time is known by `t`. Using bar-open labels as though they were close times can leak an entire future candle into the strategy.
+
+Minimum timestamp requirements:
+
+- timezone-aware or consistently normalized timestamps;
+- strictly increasing completed-bar sequence;
+- no duplicate completion timestamps for the same instrument/timeframe;
+- explicit exchange/session calendar handling;
+- documented daylight-saving-time handling where local session labels are used.
+
+## Contract and Roll Handling
+
+Formal futures validation should use actual tradable contracts or a rigorously documented continuous-series construction.
+
+For every historical observation, retain enough metadata to identify:
+
+- root symbol;
+- specific contract;
+- expiration;
+- roll date/rule;
+- whether price was adjusted for continuity;
+- whether P&L is computed on the actual tradable contract rather than an adjusted synthetic price.
+
+Do not allow a back-adjusted continuous series to create synthetic P&L across roll gaps.
+
 ## Prop-Firm Account Data
 
 Required:
 
-- current account balance/equity
-- current drawdown floor or sufficient information to calculate it
-- maximum contracts
-- active rule configuration
+- current account balance/equity;
+- current drawdown floor or sufficient verified information to calculate it;
+- maximum contracts;
+- active rule configuration.
 
 The strategy engine receives these values through a provider/configuration boundary so core strategy logic is not permanently tied to one prop firm.
 
@@ -86,40 +113,64 @@ Return `NO_TRADE` whenever a required input is missing, stale, malformed, or amb
 
 Minimum checks:
 
-1. timestamps parse successfully
-2. completed bars are ordered
-3. completed bars are deduplicated
-4. OHLC values are finite
-5. `high >= max(open, close)`
-6. `low <= min(open, close)`
-7. volumes are non-negative when present
-8. MGC and DX are fresh enough for the configured timeframe
-9. active contract mapping is known
-10. absorption-dependent signals are disabled if bid/offer executed-volume fields are unavailable
+1. timestamps parse successfully;
+2. completed bars are strictly ordered;
+3. completed bars are deduplicated;
+4. OHLC values are finite;
+5. `high >= max(open, close)`;
+6. `low <= min(open, close)`;
+7. volumes are non-negative when present;
+8. MGC and DX are fresh enough for the configured timeframe;
+9. active/historical contract mapping is known;
+10. absorption-dependent signals are disabled if executed-side volume is unavailable;
+11. bar timestamp semantics are known;
+12. historical contract roll logic is documented;
+13. backtest and live order-flow fields have compatible semantics.
+
+## Backtest Data Tiers
+
+### Tier 1 — Bar-level research
+
+Use completed bars with verified executed bid/offer volume for strategy screening and no-lookahead logic testing.
+
+This tier can model explicit slippage, costs, gaps, and conservative same-bar ambiguity, but it cannot prove exact intrabar order.
+
+### Tier 2 — Higher-resolution execution validation
+
+Use one-minute or finer data to improve fill-path realism where compatible with the strategy inputs. Ordinary one-minute OHLCV alone still cannot recreate true absorption.
+
+### Tier 3 — Tick/trade/BBO replay
+
+Final execution validation should use sufficiently granular historical trades/quotes to resolve:
+
+- stop vs target order;
+- fast-market gaps;
+- executed-side classification;
+- realistic slippage assumptions;
+- feed-specific absorption behavior.
 
 ## Security
 
 Never commit:
 
-- Tradovate passwords
-- access tokens
-- API secrets
-- prop-firm credentials
+- Tradovate passwords;
+- access tokens;
+- API secrets;
+- prop-firm credentials;
+- paid market-data credentials.
 
 Secrets must be supplied through environment variables or an external secret store.
 
-Future live adapter environment variables:
-
-- `TRADOVATE_ACCESS_TOKEN`
-- `TRADOVATE_ENV=demo|live`
-
 ## Implementation Gate
 
-The deterministic data-normalization and market-structure primitives may now be implemented.
+The deterministic normalization, market-structure, absorption, DXY, trade-plan, risk, final-signal, and no-lookahead backtest primitives are implemented.
 
-A production LONG/SHORT signal engine is **not** considered complete until:
+A production LONG/SHORT system is **not** considered empirically validated until:
 
-1. a real MGC sample confirms bid/offer executed-volume fields under the user's entitlement,
-2. a real DX subscription resolves the active contract and streams successfully,
-3. prop-account data/rules are wired and validated,
-4. backtest/live code paths use the same strategy functions.
+1. a clean historical MGC dataset confirms executed bid/offer semantics;
+2. synchronized historical DX data and roll handling are verified;
+3. the exact stateful GIBRC setup lifecycle is connected to the replay engine;
+4. realistic friction is included;
+5. out-of-sample, parameter-sensitivity, and walk-forward tests are completed;
+6. the system survives live shadow validation;
+7. prop-account rules are verified before any prop-specific probability simulation.
