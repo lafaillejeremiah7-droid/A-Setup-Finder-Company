@@ -13,6 +13,7 @@ class MarketBar:
     high: float
     low: float
     close: float
+    volume: float | None = None
     bid_volume: float | None = None
     offer_volume: float | None = None
     up_volume: float | None = None
@@ -77,6 +78,7 @@ def normalize_tradovate_bar(raw: Mapping[str, Any]) -> MarketBar:
         high=high,
         low=low,
         close=close,
+        volume=_to_optional_float(raw.get("volume"), "volume"),
         bid_volume=_to_optional_float(raw.get("bidVolume"), "bid_volume"),
         offer_volume=_to_optional_float(raw.get("offerVolume"), "offer_volume"),
         up_volume=_to_optional_float(raw.get("upVolume"), "up_volume"),
