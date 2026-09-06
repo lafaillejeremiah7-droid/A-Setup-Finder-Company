@@ -7,6 +7,19 @@ Section references point back to the paper. Empirical corrections live in `findi
 
 ---
 
+> ### ⚠️ Two measured constraints that reorder this build
+> See **[`feed-quality.md`](./feed-quality.md)**.
+>
+> 1. **Feed gamma is unusable for NDX (C8).** 4-dp quantization = 6.7% of peak gamma; 18 adjacent strikes
+>    (**90 index points**) report identical gamma. Gamma must be computed from IV via a fitted surface.
+>    **The IV surface engine is therefore a hard prerequisite for NDX walls, not a refinement.**
+> 2. **`current_price` contradicts the options' own quotes (C9)** by −46 NDX pts / +0.59 QQQ pts, in
+>    opposite directions. Forwards must come from put-call parity per expiry. **This contaminates the basis
+>    currently computed in `capture.py`.**
+>
+> Net effect on ordering: QQQ becomes the near-term path (its feed gamma is well resolved at 0.2% of peak),
+> and NDX unlocks once the surface engine lands.
+
 ## 0. SCOPE: indicator only (user decision, 2026-09-06)
 
 **Deliverable is an indicator. Not a bot, not a dashboard.** No signals, no entries, no orders, no
@@ -56,7 +69,7 @@ Volume Profile: marked MANUALLY on the futures chart (not computed)
 |---|---|
 | Data ingestion | chains/trades, quotes, IV inputs, NDX/QQQ/NQ prices, calendars, rates, timestamps |
 | IV surface engine | quote filtering, forward/carry inference, IV inversion, surface fit, exact clocks, no-arb checks, scenario dynamics |
-| GEX engine | greeks from current surface; signed inventory scenarios; total & 0DTE net/gross GEX; gamma-by-strike; roots; zones; concentration; persistence |
+| GEX engine | greeks **computed from the fitted surface — NEVER read from the feed (C8)**; signed inventory scenarios; total & 0DTE net/gross GEX; gamma-by-strike; roots; zones; concentration; persistence |
 | Mapping engine | NDX/QQQ → NQ basis + scaling, futures-roll awareness, settlement handling |
 | ~~Dashboard~~ | **dropped — indicator-only scope (§0)** |
 | Tradovate indicator | minimal rectangles + optional core-strike lines **only** |

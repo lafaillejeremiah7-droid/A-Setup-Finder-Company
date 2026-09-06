@@ -142,6 +142,38 @@ Two consequences:
 This also refines C3. "NDX has daily expiries" is true, but the precise statement is that **`NDXP` has the
 daily expiries** — which is why they were easy to miss.
 
+### C8. I planned to consume the feed's gamma. Its precision makes that impossible for NDX. ❌→✅ MEASURED
+
+Full study: **[`feed-quality.md`](./feed-quality.md)**. Summary:
+
+The feed publishes greeks to **4 decimal places**. Gamma scales as `1/(S·σ·√T)`, so at NDX's price level
+gamma is ~0.0015 and the 0.0001 quantization step is **6.7% of peak gamma**. Measured within ±2% of the
+forward: **142 NDX strikes report only 14 distinct gamma values**, with 18 consecutive strikes — **90 index
+points** — reporting *identical* gamma. Across the full expiry, one run spans **320 points**.
+
+**This is 4–15× larger than the 21-point basis error of C2**, and it lands on the exact quantity the zone
+algorithm exists to resolve. It also means **C1 is not implementable on raw NDX feed values**: with gamma
+flattened to 14 levels, `γ×OI` variation between adjacent strikes is driven by OI with gamma contributing
+mostly quantization noise.
+
+IV and delta are quantized at **0.05% and 0.02%** of median — three orders of magnitude better. So gamma
+must be **computed from IV**, never read from the feed. Doing so recovers full resolution (14 → 142 distinct
+values). This is precisely what paper §1.3 already required; it is now empirically justified rather than
+merely good practice.
+
+### C9. I used `current_price` as spot. It contradicts the options' own quotes. ❌→✅ MEASURED
+
+Recovering the forward from put-call parity (R² ≈ 0.9998 over 213 strike pairs, no assumed rates) and
+removing carry gives an implied spot that disagrees with `current_price` — **NDX by −46 pts (−0.156%), QQQ
+by +0.59 (+0.082%)**, in **opposite directions**. The two chains disagree about the underlying by ~0.24%
+(≈70 NDX pts) before positioning is considered.
+
+Two consequences: (a) the forward must be derived per expiry from parity, not from `current_price` —
+including for the **basis**, which `capture.py` currently computes from `current_price` and which is
+therefore contaminated; (b) **finding #8 is now suspect** — a material share of the NDX↔QQQ wall
+disagreement may be this forward inconsistency rather than a positioning signal, and must be re-measured
+on parity forwards before any positioning conclusion is drawn.
+
 ---
 
 ## 2. Confirmed — my findings the paper independently corroborates
@@ -309,10 +341,17 @@ The measured ratio **drifts** (dividends, expense ratio) and must be recomputed 
   percentiles are a Phase-2 upgrade, not a prerequisite. See build-spec §0.
 - **NDX/QQQ reconciliation policy** — required by finding #8. Display disagreement; test QQQ's
   incremental value per §9.3 before including it in any composite.
-- **Feed update cadence is UNVERIFIED.** Two captures 23s apart on a weekend were byte-identical, which
-  proves nothing (market closed). If the CBOE delayed feed refreshes greeks only once daily, intraday
-  capture is pointless and the 0DTE premise weakens badly. **Must be measured on a trading day** — this is
-  a genuine risk to the design, not a detail.
+- ~~**Feed update cadence is UNVERIFIED**~~ → **PARTLY RESOLVED**, see [`feed-quality.md`](./feed-quality.md).
+  Greeks are *not* stale relative to quotes: the forward recovered from the delta profile matches the
+  parity forward to 4–7 NDX pts, against a 40.5-pt Thu→Fri move. Per-contract trade times span the session.
+  **Still unmeasured:** true intraday evolution, which needs consecutive captures in a live session —
+  **Tue 2026-09-08** (Mon is Labor Day). Wall *migration* is currently assumed, not demonstrated.
+- **The feed's top-level `timestamp` is not a freshness signal** — it republished on a Sunday
+  (2026-09-06 13:57) carrying Friday's market data. Freshness must key on `last_trade_time`.
+- **Re-measure finding #8 on parity forwards** before attributing NDX↔QQQ wall disagreement to
+  positioning (see C9).
+- **NDX viability is now conditional** on greeks from a fitted IV surface (C8). Until that exists, QQQ is
+  the only instrument whose raw feed values can locate a wall.
 - **Forward/carry inputs** for surface work (§1.3) — infer via put-call parity or supply rates?
 - Whether **QQQ adds incremental value over NDX** after normalization (§9.3) — must be tested, not assumed.
 - **Volume Profile** stays manual on the futures chart (§6.1, §10.1) — confirmed by the paper as the
