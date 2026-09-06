@@ -7,12 +7,49 @@ Section references point back to the paper. Empirical corrections live in `findi
 
 ---
 
+## 0. SCOPE: indicator only (user decision, 2026-09-06)
+
+**Deliverable is an indicator. Not a bot, not a dashboard.** No signals, no entries, no orders, no
+trade management, no Streamlit UI. The output is lines and zones on an MNQ chart.
+
+One constraint survives this cut and cannot be removed: **a Tradovate indicator cannot fetch options
+data.** Options exist on NDX/QQQ at CBOE; a chart script has no route to them. So the indicator needs a
+**level calculator** upstream — a script that reads the chain and writes out the wall levels. That
+calculator is not a bot in any trading sense: it makes no decisions and expresses no opinion about
+direction. It converts option chains into price levels. Nothing else.
+
+| Was planned | Indicator-only status |
+|---|---|
+| Capture + distill layer | **KEEP** — the only source of options data |
+| IV surface → GEX → zones | **KEEP** — this is what produces the walls |
+| Basis mapping to MNQ | **KEEP** — this is what makes levels land on the right price |
+| Level calculator → levels file | **KEEP** — minimal; replaces "the bot" |
+| Tradovate renderer | **KEEP** — this is the indicator |
+| Streamlit dashboard | **DROPPED** |
+| Signals / entries / automation | **DROPPED** (was never in scope; explicitly out now) |
+| Backtest harness (H1–H15) | **DEFERRED** — nothing to backtest until levels exist |
+
+### Consequence: strength bands no longer block the build
+
+Low/Med/High was going to need weeks of capture history to calibrate percentiles. It does not.
+`GlobalShare` — a strike's share of total gamma in the snapshot — is a **within-snapshot** percentage,
+computable from a single capture. So strength works on day one:
+
+- **Phase 1 (now):** strength from within-snapshot share. Zero history required.
+- **Phase 2 (later):** re-express bands as percentiles against accumulated history, which distinguishes
+  "big for today" from "big in absolute terms." Strictly an upgrade, not a prerequisite.
+
+This also relaxes storage: history is a nice-to-have for band calibration, not the product. A rolling
+~60 trading days at ~200 KB/snapshot ≈ 84 MB, comfortably version-controllable.
+
+---
+
 ## 1. Architecture (§10.1)
 
 ```
-options data ──▶ IV surface engine ──▶ GEX engine ──▶ mapping engine ──▶ ├─ dashboard
-                                                                        └─ Tradovate indicator
-Volume Profile: marked MANUALLY on the futures chart (not computed by the bot)
+options data ──▶ IV surface engine ──▶ GEX engine ──▶ mapping engine ──▶ levels file ──▶ Tradovate
+   (CBOE)                                                                                indicator
+Volume Profile: marked MANUALLY on the futures chart (not computed)
 ```
 
 | Layer | Responsibility |
@@ -21,7 +58,7 @@ Volume Profile: marked MANUALLY on the futures chart (not computed by the bot)
 | IV surface engine | quote filtering, forward/carry inference, IV inversion, surface fit, exact clocks, no-arb checks, scenario dynamics |
 | GEX engine | greeks from current surface; signed inventory scenarios; total & 0DTE net/gross GEX; gamma-by-strike; roots; zones; concentration; persistence |
 | Mapping engine | NDX/QQQ → NQ basis + scaling, futures-roll awareness, settlement handling |
-| Dashboard | regime, zone table, gamma-by-strike, intraday migration, divergence, data quality, IV context |
+| ~~Dashboard~~ | **dropped — indicator-only scope (§0)** |
 | Tradovate indicator | minimal rectangles + optional core-strike lines **only** |
 | Research store | immutable timestamped snapshots for backtest and model audit |
 

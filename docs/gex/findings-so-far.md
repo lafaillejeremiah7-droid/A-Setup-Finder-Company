@@ -114,6 +114,34 @@ Therefore a dashboard colouring calls **+** and puts **−** is **not** reportin
 option gamma is positive for a long vanilla call *and* a long vanilla put. It is applying a **dealer-
 position convention** (§1.0). This sharpens my §3.4 finding: the sign is doubly non-physical.
 
+### C7. I treated "NDX" as one options root. It is **two**, and they collide. ❌→✅ MEASURED
+
+The CBOE `_NDX` chain contains two roots with different settlement mechanics:
+
+| Root | Contracts (measured) | Settlement | What it is |
+|---|---:|---|---|
+| `NDX` | 4,266 | **AM** — settles on the opening print after the last trading day | traditional monthlies |
+| `NDXP` | 9,426 | **PM** — settles on the close | weeklies/**dailies** |
+
+**257 `(expiry, type, strike)` triples exist under both roots.** I had been keying contracts on
+`(expiry, type, strike)` only. That merged the two roots' open interest and mis-stated NDX gross GEX as
+**$11.69B instead of $18.80B — a $7.1B / 38% error.** Caught by round-tripping GEX out of the distilled
+storage files and comparing against the raw chain; it would not have been visible from either file alone.
+
+Two consequences:
+
+1. **The root is part of a contract's identity.** Any join between greeks and open interest must key on
+   `(root, expiry, type, strike)`. Enforced in `distill.py`, with a `duplicate_keys` counter that flags
+   the ambiguity if the feed shape ever changes again.
+
+2. **AM vs PM settlement changes what counts as 0DTE.** On its stated expiry date, an AM-settled contract
+   has *already stopped trading* — its gamma is not live during that session. A PM-settled contract's
+   gamma is live all day and peaks into the close. Summing them into one "0DTE gamma" number fabricates
+   exposure that no dealer is hedging. The dailies are `NDXP`, so **0DTE work runs on the PM-settled root.**
+
+This also refines C3. "NDX has daily expiries" is true, but the precise statement is that **`NDXP` has the
+daily expiries** — which is why they were easy to miss.
+
 ---
 
 ## 2. Confirmed — my findings the paper independently corroborates
@@ -270,8 +298,21 @@ The measured ratio **drifts** (dividends, expense ratio) and must be recomputed 
 - ~~**C3:** re-verify NDX daily expiries~~ → **RESOLVED**: NDX has dailies. Decision: **both, NDX primary.**
 - ~~**NQ quote source** for `Basisₜ`~~ → **RESOLVED**: Yahoo `NQ=F`. Two follow-ups remain:
   identify the **specific traded contract** (not continuous) and enforce **timestamp synchronization** (§9.1).
+- ~~**Snapshot durability** — raw chains are 1.3 MB/snapshot (~2.3 GB/yr), too large to commit, but the
+  sandbox is ephemeral so gitignoring them loses the only history.~~ → **RESOLVED**: distilled storage,
+  ~200 KB/snapshot committed. Open interest is content-addressed (it is previous-settlement data and does
+  not move intraday, so it is stored once per distinct value-set). Zero-OI/zero-volume contracts are
+  dropped, which is **provably** lossless because GEX ∝ OI — verified by recomputing gross GEX from the
+  committed files at relative error 1.6e-15. Raw chains stay gitignored as a same-session audit copy.
+- ~~**Strength bands cannot be calibrated until enough snapshots exist**~~ → **RESOLVED, not blocking**:
+  `GlobalShare` is a *within-snapshot* percentage, so Low/Med/High works from a single capture. Historical
+  percentiles are a Phase-2 upgrade, not a prerequisite. See build-spec §0.
 - **NDX/QQQ reconciliation policy** — required by finding #8. Display disagreement; test QQQ's
   incremental value per §9.3 before including it in any composite.
+- **Feed update cadence is UNVERIFIED.** Two captures 23s apart on a weekend were byte-identical, which
+  proves nothing (market closed). If the CBOE delayed feed refreshes greeks only once daily, intraday
+  capture is pointless and the 0DTE premise weakens badly. **Must be measured on a trading day** — this is
+  a genuine risk to the design, not a detail.
 - **Forward/carry inputs** for surface work (§1.3) — infer via put-call parity or supply rates?
 - Whether **QQQ adds incremental value over NDX** after normalization (§9.3) — must be tested, not assumed.
 - **Volume Profile** stays manual on the futures chart (§6.1, §10.1) — confirmed by the paper as the
