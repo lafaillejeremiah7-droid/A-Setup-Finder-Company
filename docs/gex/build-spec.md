@@ -297,14 +297,69 @@ This matches the discretionary method already in use (absorption + delta + walls
 
 ---
 
+## 9a. User's minimal indicator spec — reconciliation (2026-09-06)
+
+The user supplied a concrete, minimal spec for the finished Tradovate indicator. It agrees with this
+document almost point-for-point. Recording it as the **authoritative shape of the output**, plus the
+three places it meets a measured constraint.
+
+**The user's rules (verbatim intent):**
+- Four independent structures: **Call Wall, Put Wall, 0DTE Call Wall, 0DTE Put Wall.**
+- Each: **rank strikes by side-specific GEX magnitude, take top 3.** Clustered → **Zone** (core = strongest
+  of the three). Dispersed → **single line at the strongest strike.** Cluster-vs-dispersed threshold is to
+  be **fixed and tested**, not left subjective.
+- **Total GEX** = broad expiry universe; **0DTE GEX** = only options expiring the current trading day.
+- **Gamma Flip** = solve `NetGEX(S)=0` by repricing across hypothetical spot; render a **small neutral gray
+  zone**, not a precise point, and not automatically S/R.
+- **Strength** = WEAK / MODERATE / STRONG / EXTREME, meaning structural dominance, **never** probability
+  of reversal.
+- **Unit**: dollar GEX **per 1% move**, one consistent convention (e.g. "$1.82B GEX / 1%").
+- **Chart shows only**: the four structures (zone or line), core strike, $GEX/1%, strength rating, flip
+  zone, and a tiny `TOTAL: ± / 0DTE: ±` regime line. **Hide** raw IV, OI, per-strike greeks, Max Pain,
+  full chain, distance-to-level, dashboards.
+- **NDX→NQ**: `NQ Wall = NDX Wall + Basisₜ`, synchronized prices; NQ and MNQ share levels.
+- **Replay**: strict no-look-ahead — at a replay timestamp use only data known then.
+
+**Three reconciliations with what was measured (see `feed-quality.md`):**
+
+1. **"top-3 clustered → zone, else line" is a clean simplification of the §4.2 λ-cluster algorithm, and it
+   wins for a v1.** Keep the fuller λ=0.40 / volatility-normalized-gap growth as the internal engine, but
+   the top-3 rule is what the indicator surfaces. **The cluster/dispersed threshold must be floored at the
+   physical resolution limit ±S·σ·√T** — two strikes closer than that are not distinguishable structures
+   regardless of GEX, so "clustered" below the floor is automatic.
+
+2. **The user lists "option gamma, or inputs needed to calculate gamma."** Measurement forces the second
+   branch for NDX: **feed gamma is quantized to ~14 distinct values across 142 near-money NDX strikes (C8)**,
+   a 90-point smear. The top-3 ranking would tie dozens of strikes. **Gamma MUST be computed from IV via the
+   fitted surface for NDX** before ranking. QQQ's raw feed gamma (0.2% of peak) can rank directly for a v1.
+
+3. **The user's basis formula uses `NDX_t`.** Do **not** use the feed's `current_price` for that term:
+   it disagrees with the options' own parity-implied spot by −46 NDX pts (C9), which would bias every
+   mapped wall. Use the **parity-implied forward per expiry** as the index anchor, then apply basis.
+
+**Consequent v1 vs v2 split (indicator-only scope, §0):**
+- **v1 (QQQ):** raw-feed gamma is clean enough to rank → the four structures + flip + regime + strength
+  (Phase-1 within-snapshot share) render immediately. Proves the whole pipeline end to end.
+- **v2 (NDX/NDXP):** unlocks once the IV surface engine computes gamma (C8) and parity forwards feed the
+  basis (C9). This is the higher-resolution, daily-expiry-native path the user ultimately wants.
+
+---
+
 ## 10. Build order
 
-1. **Capture-forward snapshot job** — CBOE QQQ (+NDX) → immutable timestamped JSON. *Starts history; unblocks ΔOI, persistence, and every quantile calibration.*
-2. **IV surface engine** — quote filtering, exact clocks, per-strike IV, quality flags, versioning.
-3. **GEX engine** — greeks, sign scenarios, total/0DTE net + gross, gamma-by-strike, zone algorithm, flip + swept zone.
-4. **Mapping engine** — `Basisₜ` source resolved (Yahoo `NQ=F`). Must add: specific-contract resolution
-   (not continuous front-month), quarterly-roll handling, timestamp synchronization, basis outlier filter,
-   and a theoretical `F ≈ S·exp[(r−q)τ]` fallback for staleness detection (§9.1).
+> Reordered by measurement (`feed-quality.md`): the IV surface moved up because NDX gamma is unusable
+> raw (C8), and the basis fix (C9) belongs with it. Dashboard removed — indicator-only scope (§0).
+
+1. ✅ **DONE — Capture-forward snapshot job.** CBOE `_NDX`+QQQ → immutable timestamped snapshots, distilled
+   storage, round-trip-verified. Commits `e581aa8`, `bc7391c`, `dc3cbe9`.
+2. **IV surface engine** — quote filtering, exact clocks, **parity forward per expiry (C9)**, per-strike IV,
+   **fitted surface so gamma is computed not read (C8)**, quality flags, versioning. *Hard prerequisite for
+   NDX; not optional.*
+3. **GEX engine** — greeks from the surface, sign scenarios, total/0DTE net + gross, gamma-by-strike,
+   **top-3 → zone-or-line** rule with the ±S·σ·√T floor, flip zone via `NetGEX(S)=0`.
+4. **Mapping engine** — `Basisₜ` from Yahoo `NQ=F` **minus parity-implied index anchor (C9)**. Must add:
+   specific-contract resolution (not continuous front-month), quarterly-roll handling, timestamp
+   synchronization, basis outlier filter, theoretical `F ≈ S·exp[(r−q)τ]` fallback for staleness (§9.1).
 
    **Instrument policy — both, NDX primary.** NDX: daily expiries confirmed, finer strike grid in index
    terms, more contracts, European/cash-settled (no early-exercise modelling), no ETF ratio step.
@@ -316,8 +371,12 @@ This matches the discretionary method already in use (absorption + delta + walls
    independently, normalize to common index-point/dollar-gamma units, **display the disagreement as a
    first-class diagnostic**, and admit QQQ into any composite only if it passes §9.3's incremental
    out-of-sample test. Never blend two different answers into a false consensus.
-5. **Dashboard** (Streamlit) — regime, zone table, gamma-by-strike, migration, data integrity, IV context, date picker over captured days.
-6. **Tradovate indicator** — thin renderer: zone rectangles + flip band + optional core lines, fed by the engine.
-7. **Research store + backtest harness** — event states, matched controls, walk-forward, H1–H15.
+5. ~~**Dashboard** (Streamlit)~~ — **DROPPED, indicator-only scope (§0).**
+6. **Level calculator + Tradovate indicator** — the engine writes the four structures (zone/line + core +
+   $GEX/1% + strength + flip + regime) to a levels file; the Tradovate JS indicator draws only those, with
+   **replay-correct no-look-ahead** (levels update only when historically-available data would have changed
+   them). This is the deliverable.
+7. **Research store + backtest harness** — **DEFERRED** until levels exist; event states, matched controls,
+   walk-forward, H1–H15.
 
 **Do not ship strength bands as calibrated until enough snapshots exist to compute stable quantiles.**
