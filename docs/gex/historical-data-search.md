@@ -82,7 +82,42 @@ out against the API's ~30s limit.
 A full chain for one ticker/date = **1 credit** (cached-snapshot pricing). So **100 replay-days per day**
 on the free tier — ample for practice. 30-day free trial of a paid tier also available, no card required.
 
-**TWO CAVEATS measured from the docs (not yet failure-tested against a live key):**
+### ✅ TESTED LIVE (2026-09-06, token-free AAPL historical path)
+
+marketdata.app unlocks **any AAPL contract with no token**, for historical data. That let the make-or-break
+question be answered directly, without waiting on a working token. Historical chain
+`GET /v1/options/chain/AAPL/?date=2025-03-14&expiration=2025-03-21` returned:
+
+| Field | Historical (`date=`) result |
+|---|---|
+| `openInterest` | ✅ **real** (e.g. 31,100 / 20,789 / 43,668) |
+| `bid` / `ask` | ✅ **real** |
+| `volume` | ✅ real |
+| `underlyingPrice` | ✅ real (213.49) |
+| `iv` | ❌ **null (all rows)** |
+| `gamma` / `delta` / `theta` / `vega` | ❌ **null (all rows)** |
+
+**So historical greeks AND IV are both null — confirmed, not just feared.** But everything needed to
+*reconstruct* them is present. Verified in the same session: Black-Scholes IV inversion from the bid/ask
+mid → gamma → GEX runs cleanly on the historical data. Recovered a smooth, sane IV smile (calls
+0.297–0.374, puts 0.315–0.410) and a coherent gamma profile peaking near the money, giving a near-money
+gross GEX of \$0.42B/1% for that one AAPL expiry. **The full pipeline works on historical marketdata.app
+data.**
+
+**Consequence:** for **replay/historical**, the IV-surface engine (price → IV → gamma) is **mandatory**,
+because the vendor supplies neither IV nor greeks on `date=` requests. This is the same engine C8 already
+required for live NDX — so it is needed regardless; replay just makes it non-negotiable for QQQ too.
+
+### Auth status (unresolved — needs the emailed token, not dashboard credentials)
+
+Per the auth docs, the API **token is a distinct string emailed to you** when you request it from the
+dashboard — it is **not** the "API key" or "Access ID" shown in the dashboard. Both dashboard values were
+tested in every form (Bearer / `?token=` / concatenations) and all returned `401 {"errmsg":"Invalid
+token."}`. Non-AAPL symbols (QQQ/NDX/SPX) therefore remain unconfirmed until the emailed token is used.
+Also note marketdata.app enforces a **single-IP policy** — the sandbox and the user's own dashboard
+session hitting the API at once can trigger a temporary block.
+
+**TWO CAVEATS measured from the docs (now confirmed live):**
 
 1. **Historical greeks may be null.** The docs state plainly: *"This is a current chain, so the Greek
    columns are populated. A historical request (`date=`) returns null for all five."* If greeks are null on
