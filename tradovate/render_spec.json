@@ -1,0 +1,24 @@
+{
+  "_comment": "Machine-checkable render contract for The Gamma Map Tradovate indicator. This is the SINGLE source of truth for field names and formatting shared by tradovate/gamma_map_indicator.js (SECTION 1 RENDER_SPEC mirrors this) and tests/test_indicator_contract.py. Do not fork the rules; edit here and keep both in sync.",
+  "schemaVersion": "levels-1.0.0",
+  "renderTarget": "MNQ",
+  "maxLines": 5,
+  "lines": [
+    { "key": "call.total", "universe": "total", "side": "call", "label": "CALL WALL", "kind": "wall" },
+    { "key": "call.0dte", "universe": "0dte", "side": "call", "label": "0DTE CALL WALL", "kind": "wall" },
+    { "key": "flip", "kind": "flip", "label": "GAMMA FLIP" },
+    { "key": "put.0dte", "universe": "0dte", "side": "put", "label": "0DTE PUT WALL", "kind": "wall" },
+    { "key": "put.total", "universe": "total", "side": "put", "label": "PUT WALL", "kind": "wall" }
+  ],
+  "wallLabelFields": ["label", "strike", "gex", "strength"],
+  "labelSeparator": "   ",
+  "strike": { "thousandsSeparator": ",", "decimals": 0 },
+  "gex": { "divisor": 1000000000, "decimals": 2, "prefix": "$", "suffix": "B / 1%", "absolute": true },
+  "regime": {
+    "template": "TOTAL: {total}   0DTE: {zerodte}",
+    "signWords": { "+": "POSITIVE", "-": "NEGATIVE", "0": "NEUTRAL" },
+    "divergenceSuffix": "   (DIVERGENCE)",
+    "proxySuffix": "   (proxy)"
+  },
+  "strengthBands": ["WEAK", "MODERATE", "STRONG", "EXTREME"]
+}
