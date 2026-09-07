@@ -61,9 +61,9 @@ from .gex import (
     select_0dte_universe,
     select_total_universe,
     select_wall,
-    solve_gamma_flip,
+    solve_gamma_flip_bs,
 )
-from .surface import SURFACE_MODEL_VERSION, forward_from_parity
+from .surface import SURFACE_MODEL_VERSION, forward_from_parity, time_to_expiry
 
 # ---------------------------------------------------------------------------
 # Versioning (build-spec.md SS7). The schema version is the file contract; the model
@@ -266,15 +266,18 @@ def build_levels(
     nq_price = float(meta["quotes"]["NQ=F"]["price"])
     nq_continuous = bool(meta["quotes"]["NQ=F"].get("is_continuous_series", False))
     skew = meta.get("derived", {}).get("source_skew_seconds")
+    ndx_feed_spot = float(meta.get("derived", {}).get("ndx_spot") or 0.0)
+    raw = mapping.raw_feed_basis(nq_price, ndx_feed_spot)
+    # Pass the raw basis so the SS9.1 outlier filter can flag a corrected-vs-raw swing that
+    # signals a contaminated parity anchor (review issue #4) instead of silently mapping it.
     corrected = mapping.corrected_basis(
         nq_price,
         anchor_forward,
         parity_r2=parity_r2,
         nq_is_continuous_front_month=nq_continuous,
         source_skew_seconds=skew,
+        raw_basis=raw.basis,
     )
-    ndx_feed_spot = float(meta.get("derived", {}).get("ndx_spot") or 0.0)
-    raw = mapping.raw_feed_basis(nq_price, ndx_feed_spot)
     quality_flags.extend(corrected.quality_flags)
 
     # QQQ->NDX ratio, recomputed live from the snapshot spots (build-spec.md SS2.1).
@@ -330,7 +333,7 @@ def build_levels(
 
     # -- gamma flip (SS5), mapped to MNQ. --------------------------------------
     flip_block = _build_flip(
-        total_contracts, feed_spot, gamma_source, oi_available, sign_model,
+        total_contracts, feed_spot, oi_available, sign_model, asof_dt,
         instrument=instrument, basis_value=corrected.basis, ratio=ratio,
     )
 
@@ -477,15 +480,18 @@ def build_kaggle_levels(
         )
 
     # Gamma flip in native QQQ space (no MNQ mapping): solve the root, keep it native.
+    # Gamma is SPOT-SHIFTED (repriced at each hypothetical spot from the contract's IV and
+    # exact clock), not held at the fixed feed value -- otherwise NetGEX(S)=S^2*const is
+    # sign-preserving and no root exists (review issue #1). Kaggle carries per-contract IV,
+    # so the same spot-shifted BS gamma the live path uses applies here.
     flip_native = None
     flip_others: list[float] = []
     flip_neutral = True
     if total_contracts and feed_spot > 0.0:
-        def gamma_at(contract, S):
-            return gamma_source(contract, S)
-
-        flip = solve_gamma_flip(
-            total_contracts, gamma_at=gamma_at, oi_available=oi_available,
+        flip = solve_gamma_flip_bs(
+            total_contracts,
+            time_to_expiry=lambda c: time_to_expiry(c.expiry, c.root, asof_dt),
+            oi_available=oi_available,
             grid_min=feed_spot * 0.90, grid_max=feed_spot * 1.10,
             reference_spot=feed_spot, sign_model=sign_model,
         )
@@ -628,9 +634,9 @@ def _sorted_expiry_tokens(chain: NormalizedChain, root: str, trading_day: date) 
 def _build_flip(
     total_contracts: list,
     feed_spot: float,
-    gamma_source,
     oi_available: bool,
     sign_model: SignModel,
+    asof_dt: datetime,
     *,
     instrument: str,
     basis_value: float,
@@ -638,20 +644,25 @@ def _build_flip(
 ) -> dict[str, Any]:
     """Solve the gamma flip on a spot grid around the feed spot and map it to MNQ (SS5).
 
-    v1 QQQ uses a spot-shifted feed gamma (gamma held per-contract, S^2 repriced): the
-    feed gamma source ignores the hypothetical spot, so the flip reflects the S^2 term and
-    the OI-weighted net inventory. `neutral` records that no root was found (a monotone
-    net-GEX curve). `other_roots` lists any additional crossings mapped to MNQ.
+    The gamma used in the scan is SPOT-SHIFTED (recomputed at each hypothetical spot from
+    each contract's own IV and exact clock, gex.spot_shifted_gamma_source), NOT the fixed
+    feed gamma. Holding the feed gamma constant while only S^2 varies leaves NetGEX(S) =
+    S^2*const sign-preserving, so the solver can never find a root -- that was the review's
+    issue #1, which made the flip line permanently neutral on the QQQ v1 path. Repricing
+    gamma at S lets the OI-weighted, dealer-signed net inventory genuinely change sign so
+    NetGEX(S)=0 has a locatable root (build-spec.md SS5). `neutral` records that no root was
+    found; `other_roots` lists any additional crossings mapped to MNQ.
     """
     if not total_contracts or feed_spot <= 0.0:
         return {"mnq_price": None, "neutral": True, "other_roots": []}
 
-    def gamma_at(contract, S):  # feed gamma is per-contract; S enters only via S^2 (SS5).
-        return gamma_source(contract, S)
-
+    # The flip reprices BS gamma at each hypothetical spot from the contract's IV and its
+    # exact time-to-settlement (C7 clock), vectorized over the grid for speed.
     lo, hi = feed_spot * 0.90, feed_spot * 1.10
-    flip = solve_gamma_flip(
-        total_contracts, gamma_at=gamma_at, oi_available=oi_available,
+    flip = solve_gamma_flip_bs(
+        total_contracts,
+        time_to_expiry=lambda c: time_to_expiry(c.expiry, c.root, asof_dt),
+        oi_available=oi_available,
         grid_min=lo, grid_max=hi, reference_spot=feed_spot, sign_model=sign_model,
     )
 

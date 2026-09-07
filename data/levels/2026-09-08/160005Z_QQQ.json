@@ -1,7 +1,7 @@
 {
-  "asof": "2026-09-06T23:06:12+00:00",
+  "asof": "2026-09-08T16:00:05+00:00",
   "gamma_flip": {
-    "mnq_price": 29634.6692,
+    "mnq_price": 24236.9515,
     "neutral": false,
     "other_roots": []
   },
@@ -13,65 +13,64 @@
     "surface": "surface-1.0.0"
   },
   "provenance": {
-    "basis_parity": -15.7651,
+    "basis_parity": -10.5847,
     "basis_parity_anchor": "parity_forward",
-    "basis_parity_r2": 0.999961,
-    "basis_raw": 21.0957,
+    "basis_parity_r2": 1.0,
+    "basis_raw": 10.0,
     "basis_raw_anchor": "feed_current_price",
-    "nq_price": 29565.25,
+    "nq_price": 24300.0,
     "nq_quote_is_continuous_front_month": true,
     "oi_available": true,
     "proxy": false,
-    "qqq_ndx_ratio": 0.0242856842,
+    "qqq_ndx_ratio": 0.0242898312,
     "quality_flags": [
-      "basis_corrected_vs_raw_disagreement_exceeds_max:36.8608",
-      "gex_no_contracts",
-      "nq_quote_is_continuous_front_month"
+      "nq_quote_is_continuous_front_month",
+      "synthetic_fixture"
     ],
     "source": "cboe_delayed"
   },
   "regime": {
     "divergence": false,
-    "total_sign": "-",
-    "zerodte_sign": "0"
+    "total_sign": "+",
+    "zerodte_sign": "+"
   },
   "render_target": "MNQ",
   "schema_version": "levels-1.0.0",
   "walls": [
     {
       "confidence": "high",
-      "gex_per_1pct": 833359502.83,
+      "gex_per_1pct": 39961880.0,
       "label": "Call Wall",
-      "mnq_price": 30043.0957,
+      "mnq_price": 24691.1102,
       "side": "call",
-      "strength": "MODERATE",
+      "strength": "EXTREME",
       "universe": "total"
     },
     {
       "confidence": "high",
-      "gex_per_1pct": -1399189590.25,
+      "gex_per_1pct": -31329000.0,
       "label": "Put Wall",
-      "mnq_price": 28807.8001,
+      "mnq_price": 24279.4153,
       "side": "put",
-      "strength": "MODERATE",
+      "strength": "EXTREME",
       "universe": "total"
     },
     {
       "confidence": "high",
-      "gex_per_1pct": 0.0,
+      "gex_per_1pct": 33417600.0,
       "label": "0DTE Call Wall",
-      "mnq_price": null,
+      "mnq_price": 24485.2627,
       "side": "call",
-      "strength": "WEAK",
+      "strength": "EXTREME",
       "universe": "0dte"
     },
     {
       "confidence": "high",
-      "gex_per_1pct": 0.0,
+      "gex_per_1pct": -16708800.0,
       "label": "0DTE Put Wall",
-      "mnq_price": null,
+      "mnq_price": 24073.5678,
       "side": "put",
-      "strength": "WEAK",
+      "strength": "EXTREME",
       "universe": "0dte"
     }
   ]

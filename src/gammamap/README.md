@@ -56,8 +56,8 @@ Module map:
 | `chain.py` | The internal `NormalizedChain` / `NormalizedContract` schema. Contract identity is the full `(root, expiry, type, strike)` tuple (C7). `oi_available` is the single true-GEX-vs-proxy switch. |
 | `adapters.py` | `from_distilled_snapshot` (CBOE, OI present) and `from_kaggle_csv` (Kaggle, no OI -> `oi_absent_volume_proxy`). `is_true_gex()` is the gate. |
 | `surface.py` | `forward_from_parity` (C9) and `IVSurface.surface_gamma` (gamma-from-IV, the C8 fix for NDX). QQQ v1 uses the clean feed gamma directly. |
-| `gex.py` | `compute_strike_gex`, `select_wall`, `assess_strength` (within-snapshot GlobalShare, not probability), `solve_gamma_flip`, `assess_regime`. |
-| `mapping.py` | The two mapping legs (C2) and the C9-corrected basis. |
+| `gex.py` | `compute_strike_gex`, `select_wall`, `assess_strength` (within-**side** GlobalShare, not probability), `solve_gamma_flip` / `solve_gamma_flip_bs` (spot-repriced BS gamma), `assess_regime`. |
+| `mapping.py` | The two mapping legs (C2), the C9-corrected basis, and the SS9.1 basis outlier bound + theoretical-forward fallback. |
 | `levels.py` | `build_levels` (live) and `build_kaggle_levels` (historical). Deterministic JSON, strict no-look-ahead. |
 
 ## Setup (every shell)
@@ -103,6 +103,31 @@ PYTHONPATH=src python -m pytest tests/ -q
    The live path maps each wall/flip to an **MNQ price** using the C9-corrected parity
    basis, and emits `proxy: false` (true OI-GEX). Strict no-look-ahead is enforced: a
    source timestamp later than `asof` raises `LookAheadError`.
+
+### What v1 renders (and a note on the committed sample)
+
+On a genuine **intraday** capture all five lines render: the four walls, and the
+**gamma-flip** line (solved by repricing each contract's Black-Scholes gamma from its IV
+across a hypothetical-spot scan, so `NetGEX(S)=0` actually has a root). Strength is a
+**within-side** concentration share (a call wall vs total call-side gross |GEX|, a put wall
+vs put-side gross), so the WEAK/MODERATE/STRONG/EXTREME readout is informative on real
+broad-universe data rather than collapsing to WEAK. Bands stay marked `uncalibrated`
+(Phase-1 share, not yet history-quantile; build-spec §0/§4).
+
+Two committed samples make this concrete:
+
+- `data/levels/2026-09-06/230612Z_QQQ.json` — the real weekend CBOE capture. Its trading
+  day (Fri 2026-09-04) **predates every listed expiry**, so the two **0DTE** walls are
+  legitimately empty (`mnq_price: null`, skipped by the renderer). The Total walls,
+  gamma-flip line and regime all render. This snapshot also trips the SS9.1 basis-outlier
+  flag: the QQQ parity anchor, amplified through the ~41× QQQ→NDX ratio, disagrees with the
+  raw feed basis by ~37 points, so `basis_corrected_vs_raw_disagreement_exceeds_max` is
+  raised rather than silently mapping a contaminated basis into MNQ prices.
+- `data/levels/2026-09-08/160005Z_QQQ.json` — a **synthetic same-trading-day-expiry**
+  fixture (`scripts/make_0dte_fixture.py`, clearly marked `synthetic` in provenance) whose
+  quote day IS a listed 0DTE expiry. It renders **all four** walls at real MNQ prices with
+  non-WEAK strength and a non-neutral flip — the working end-to-end example of the 0DTE +
+  strength features (asserted by `tests/test_mapping_levels.py`).
 
 ## (b) Produce a levels file for a HISTORICAL Kaggle date (volume proxy)
 

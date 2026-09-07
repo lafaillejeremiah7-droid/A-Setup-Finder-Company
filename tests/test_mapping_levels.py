@@ -109,6 +109,36 @@ def test_source_skew_is_flagged():
     assert any(f.startswith(mapping.BASIS_SOURCE_SKEW) for f in res.quality_flags)
 
 
+def test_basis_outlier_flagged_when_corrected_disagrees_with_raw():
+    """SS9.1 sanity bound: a large corrected-vs-raw basis swing is flagged (review #4).
+
+    The canonical fixture's corrected parity basis (-15.77) diverges from the raw feed
+    basis (+21.10) by ~37 points and flips sign, because QQQ's parity disagreement is
+    amplified through the ~41x QQQ->NDX ratio. That must be surfaced, not silently mapped.
+    """
+    # corrected = 29565.25 - 29581.02 ~= -15.77 ; raw = +21.10 -> ~37 pts apart, > 25.
+    res = mapping.corrected_basis(
+        29565.25, 29581.0157, raw_basis=21.0957, max_basis_disagreement=25.0
+    )
+    assert any(f.startswith(mapping.BASIS_OUTLIER) for f in res.quality_flags)
+
+
+def test_basis_outlier_not_flagged_when_corrected_agrees_with_raw():
+    """A corrected basis close to the raw basis does NOT trip the outlier bound."""
+    res = mapping.corrected_basis(
+        29565.25, 29544.1543, raw_basis=21.0957, max_basis_disagreement=25.0
+    )
+    # corrected == raw here (same anchor), so no disagreement flag.
+    assert not any(f.startswith(mapping.BASIS_OUTLIER) for f in res.quality_flags)
+
+
+def test_theoretical_forward_fallback():
+    """SS9.1 theoretical forward F ~= S*exp[(r-q)tau]; r=q=0 -> spot; carry moves it up."""
+    assert mapping.theoretical_forward(590.0, 0.02) == pytest.approx(590.0)
+    carried = mapping.theoretical_forward(590.0, 1.0, r=0.05, q=0.01)
+    assert carried > 590.0
+
+
 # ---------------------------------------------------------------------------
 # (b) build_levels on the committed QQQ snapshot -> valid true-GEX levels dict.
 # ---------------------------------------------------------------------------
@@ -215,3 +245,56 @@ def test_no_look_ahead_guard_passes_at_capture_time(fixture_snapshot_dir):
     future = datetime(2026, 9, 7, tzinfo=timezone.utc)
     levels = build_levels(fixture_snapshot_dir, "QQQ", asof=future)
     assert levels["instrument"] == "QQQ"
+
+
+# ---------------------------------------------------------------------------
+# (f) END-TO-END on the synthetic same-day fixture: populated 0DTE walls, a non-WEAK
+#     strength band, and a rendered (non-neutral) gamma-flip line (review issues #2/#6).
+# ---------------------------------------------------------------------------
+def test_build_levels_0dte_fixture_populates_all_four_walls(fixture_0dte_snapshot_dir):
+    """The same-trading-day-expiry fixture renders all four walls at real MNQ prices.
+
+    The canonical live snapshot has empty 0DTE walls (its trading day precedes every listed
+    expiry), so nothing asserted the flagship 0DTE feature end to end. This fixture's quote
+    day IS the 0DTE expiry, so both 0DTE walls MUST populate.
+    """
+    levels = build_levels(fixture_0dte_snapshot_dir, "QQQ")
+
+    walls = {w["label"]: w for w in levels["walls"]}
+    assert set(walls) == {"Call Wall", "Put Wall", "0DTE Call Wall", "0DTE Put Wall"}
+
+    # Every wall -- including BOTH 0DTE walls -- lands at a real MNQ price (not None).
+    for label in ("0DTE Call Wall", "0DTE Put Wall"):
+        assert walls[label]["mnq_price"] is not None, f"{label} did not populate"
+        assert 20000.0 < walls[label]["mnq_price"] < 30000.0
+
+    # gex_no_contracts must NOT be raised: the 0DTE universe is non-empty here.
+    assert "gex_no_contracts" not in levels["provenance"]["quality_flags"]
+
+
+def test_build_levels_0dte_fixture_has_informative_strength_and_flip(fixture_0dte_snapshot_dir):
+    """The fixture yields a non-WEAK strength band and a non-neutral gamma-flip line.
+
+    Issue #3: on real broad-universe data every wall rendered WEAK. With the side-specific
+    share denominator, a concentrated wall now reads MODERATE or stronger. Issue #1: the
+    spot-repriced flip actually crosses zero, so the flip line is not permanently neutral.
+    """
+    levels = build_levels(fixture_0dte_snapshot_dir, "QQQ")
+
+    # At least one wall is NON-WEAK -- the low/med/high readout carries information.
+    bands = {w["label"]: w["strength"] for w in levels["walls"]}
+    assert any(b != "WEAK" for b in bands.values()), bands
+    # The dominant 0DTE walls in this fixture are strongly concentrated.
+    assert bands["0DTE Call Wall"] != "WEAK"
+    assert bands["0DTE Put Wall"] != "WEAK"
+
+    # The gamma flip renders (a real MNQ price, not the permanently-neutral null the
+    # constant-feed-gamma path produced).
+    flip = levels["gamma_flip"]
+    assert flip["neutral"] is False
+    assert flip["mnq_price"] is not None
+
+    # Both regime signs are definite (not '0'), so the TOTAL/0DTE readout is informative.
+    regime = levels["regime"]
+    assert regime["total_sign"] in ("+", "-")
+    assert regime["zerodte_sign"] in ("+", "-")

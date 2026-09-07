@@ -54,8 +54,11 @@ from gammamap.gex import (
     select_0dte_universe,
     select_total_universe,
     select_wall,
+    side_gross_gex,
     sign_for,
     solve_gamma_flip,
+    solve_gamma_flip_bs,
+    spot_shifted_gamma_source,
 )
 
 
@@ -310,6 +313,57 @@ def test_flip_no_root_flagged():
 
 
 # ---------------------------------------------------------------------------
+# (d2) The spot-repriced flip: feed gamma is constant in S, BS gamma is NOT (review #1).
+# ---------------------------------------------------------------------------
+def _iv_contract(root, type_, strike, *, oi, iv, expiry=date(2026, 9, 18)):
+    c = _contract(root, type_, strike, oi=oi, expiry=expiry)
+    c.iv = iv
+    return c
+
+
+def test_feed_gamma_source_ignores_spot_but_spot_shifted_does_not():
+    # The permanently-neutral bug (review #1): feed_gamma_source returns the SAME gamma at
+    # every hypothetical spot, so NetGEX(S)=S^2*const never changes sign. The spot-shifted
+    # BS source reprices gamma at S -- gamma near the strike is larger than far from it.
+    c = _iv_contract("QQQ", "C", 600.0, oi=1000, iv=0.20)
+    c.gamma = 0.01
+    assert feed_gamma_source(c, 550.0) == feed_gamma_source(c, 600.0)  # constant in S (bug)
+
+    src = spot_shifted_gamma_source(lambda k: 5.0 / 365.0)  # ~5 calendar days to expiry
+    g_atm = src(c, 600.0)   # spot at the strike -> peak gamma
+    g_otm = src(c, 550.0)   # spot far from the strike -> smaller gamma
+    assert g_atm > 0.0
+    assert g_atm > g_otm    # gamma genuinely varies with the hypothetical spot
+
+
+def test_solve_gamma_flip_bs_finds_root_on_put_below_call_above():
+    # A put below spot and a call above cross NetGEX through zero once between them. The
+    # vectorized BS solver reprices each leg's gamma from its IV across the grid and finds
+    # the root (the production flip path; review issue #1).
+    put = _iv_contract("QQQ", "P", 580.0, oi=2000, iv=0.20)
+    call = _iv_contract("QQQ", "C", 600.0, oi=2000, iv=0.20)
+    flip = solve_gamma_flip_bs(
+        [put, call], time_to_expiry=lambda c: 5.0 / 365.0, oi_available=True,
+        grid_min=560.0, grid_max=620.0, reference_spot=590.0, n_grid=601,
+    )
+    assert flip.flip is not None
+    assert 580.0 < flip.flip < 600.0
+    # Sign is READ from the curve, not assumed (dealer-short: put below negative side).
+    assert flip.sign_below != flip.sign_above
+
+
+def test_solve_gamma_flip_bs_all_calls_has_no_root():
+    # An all-call universe stays positive -> no flip -> flagged (BS path).
+    call = _iv_contract("QQQ", "C", 600.0, oi=1000, iv=0.20)
+    flip = solve_gamma_flip_bs(
+        [call], time_to_expiry=lambda c: 5.0 / 365.0, oi_available=True,
+        grid_min=560.0, grid_max=620.0, reference_spot=590.0, n_grid=401,
+    )
+    assert flip.flip is None
+    assert "flip_no_root" in flip.quality_flags
+
+
+# ---------------------------------------------------------------------------
 # (e) GlobalShare bands: dominant -> EXTREME, flat -> WEAK (build-spec.md SS4/SS0).
 # ---------------------------------------------------------------------------
 def test_global_share_dominant_strike_is_extreme():
@@ -345,6 +399,33 @@ def test_global_share_flat_chain_is_weak():
     strength = assess_strength(prof, wall, "call")
     assert strength.band is Strength.WEAK
     assert strength.global_share < 0.07
+
+
+def test_strength_uses_side_specific_denominator():
+    # Review issue #3: a call wall's share is measured against total CALL-side gross, not
+    # the two-sided universe. With comparable call and put gross, the side-specific share
+    # is ~2x the two-sided share -- which is what turns an always-WEAK readout informative.
+    S = 26000.0
+    contracts = [
+        # Call side: 26200 dominates its side (share of call gross well above the floor).
+        _contract("QQQ", "C", 26200.0, oi=5000, gamma=0.001),
+        _contract("QQQ", "C", 26100.0, oi=2000, gamma=0.001),
+        _contract("QQQ", "C", 26300.0, oi=2000, gamma=0.001),
+        # A comparable block of put gross on the other side, spread thin so no single put
+        # dominates -- this is the gross that used to DILUTE the call wall's share.
+        *[_contract("QQQ", "P", 25000.0 + 25 * i, oi=1000, gamma=0.001) for i in range(9)],
+    ]
+    prof = compute_strike_gex(
+        contracts, spot=S, gamma_source=feed_gamma_source, oi_available=True, universe="total"
+    )
+    wall = select_wall(prof, "call")
+    call_gross = side_gross_gex(prof, "call")
+    side_share = wall.abs_gex / call_gross
+    two_sided_share = wall.abs_gex / prof.gross_gex
+    assert side_share > two_sided_share  # side-specific denominator is smaller -> larger share
+    # The assessed band uses the side-specific share.
+    strength = assess_strength(prof, wall, "call")
+    assert strength.global_share == pytest.approx(side_share)
 
 
 def test_band_thresholds_monotone():

@@ -20,9 +20,11 @@ SECTION 1 `RENDER_SPEC` mirrors that JSON, and this test:
      model the JS would build: line count (<=5, nulls skipped), each label formatted per
      the SS9a example, and the regime string.
 
-The sample file has null 0DTE walls and a null (neutral) gamma flip, so it exercises the
-skip rule: the model must contain ONLY the two real total walls (2 lines), never a faked
-line at a guessed level.
+The sample file has null 0DTE walls (its trading day predates every listed expiry), so it
+exercises the skip rule for those two lines: the model contains the two real Total walls
+plus the (now spot-repriced) gamma-flip line -- three lines -- never a faked line at a
+guessed level. A populated four-wall example lives on the synthetic same-day fixture
+(data/levels/2026-09-08/, see test_full_five_line_render and the levels tests).
 """
 
 from __future__ import annotations
@@ -177,13 +179,15 @@ def test_line_count_never_exceeds_five(levels: dict, spec: dict) -> None:
     assert len(model["lines"]) <= spec["maxLines"] == 5
 
 
-def test_sample_file_skips_null_walls_and_flip(levels: dict, spec: dict) -> None:
-    # The committed sample has null 0DTE walls and a null (neutral) flip -> only the two
-    # real total walls render. A null level is skipped, never drawn at a fake price.
+def test_sample_file_skips_null_walls_and_renders_flip(levels: dict, spec: dict) -> None:
+    # The committed sample has null 0DTE walls (trading day predates every listed expiry)
+    # -> those two lines are skipped. The two real Total walls render, and the gamma-flip
+    # line now renders too (the spot-repriced flip finds a root; review issue #1). A null
+    # level is skipped, never drawn at a fake price.
     model = build_render_model(levels, spec)
-    assert len(model["lines"]) == 2
+    assert len(model["lines"]) == 3
     labels = [ln["text"].split(spec["labelSeparator"])[0] for ln in model["lines"]]
-    assert labels == ["CALL WALL", "PUT WALL"]
+    assert labels == ["CALL WALL", "GAMMA FLIP", "PUT WALL"]
     # No line has a null/None price.
     assert all(ln["price"] is not None for ln in model["lines"])
 
@@ -191,10 +195,13 @@ def test_sample_file_skips_null_walls_and_flip(levels: dict, spec: dict) -> None
 def test_wall_labels_formatted_per_ss9a(levels: dict, spec: dict) -> None:
     model = build_render_model(levels, spec)
     texts = {ln["text"].split(spec["labelSeparator"])[0]: ln["text"] for ln in model["lines"]}
-    # Call Wall: mnq_price 30043.0957 -> "30,043"; gex 833359502.83 -> "$0.83B / 1%"; WEAK.
-    assert texts["CALL WALL"] == "CALL WALL   30,043   $0.83B / 1%   WEAK"
-    # Put Wall: mnq_price 28807.8001 -> "28,808"; gex -1399189590.25 -> "$1.40B / 1%"; WEAK.
-    assert texts["PUT WALL"] == "PUT WALL   28,808   $1.40B / 1%   WEAK"
+    # Call Wall: mnq_price 30043.0957 -> "30,043"; gex 833359502.83 -> "$0.83B / 1%".
+    # Strength is MODERATE under the side-specific share denominator (review issue #3).
+    assert texts["CALL WALL"] == "CALL WALL   30,043   $0.83B / 1%   MODERATE"
+    # Put Wall: mnq_price 28807.8001 -> "28,808"; gex -1399189590.25 -> "$1.40B / 1%".
+    assert texts["PUT WALL"] == "PUT WALL   28,808   $1.40B / 1%   MODERATE"
+    # The gamma-flip line renders (spot-repriced flip found a root; review issue #1).
+    assert texts["GAMMA FLIP"] == "GAMMA FLIP   29,635"
 
 
 def test_label_shape_matches_ss9a_regex(levels: dict, spec: dict) -> None:

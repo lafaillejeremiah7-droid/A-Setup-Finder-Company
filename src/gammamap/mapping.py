@@ -64,6 +64,19 @@ NQ_CONTINUOUS_FRONT_MONTH = "nq_quote_is_continuous_front_month"
 BASIS_SOURCE_SKEW = "basis_source_skew_exceeds_max"
 BASIS_ANCHOR_NONFINITE = "basis_anchor_nonfinite"
 MAPPING_PROXY_ANCHOR = "mapping_anchor_is_feed_spot_not_parity"  # fell back off C9 path
+BASIS_OUTLIER = "basis_corrected_vs_raw_disagreement_exceeds_max"  # SS9.1 sanity bound
+
+# build-spec.md SS9.1 mandates a basis OUTLIER filter. The corrected parity basis and the
+# raw feed basis measure the same NQ-vs-index gap through two different index anchors; a
+# large gap between them means one anchor is contaminated (e.g. a QQQ parity disagreement
+# amplified through the ~41x QQQ->NDX ratio, which on the canonical fixture drives the
+# corrected basis to -15.77 vs a +21.10 raw basis -- a 37-point, sign-flipping swing,
+# review issue #4). Beyond this many index points apart, we FLAG the disagreement so a bad
+# parity fit is never silently propagated into every mapped MNQ price. Chosen at 25 pts
+# (100 NQ ticks, ~$500/NQ contract): comfortably above the genuine C9 gap on clean NDX data
+# (-46 NDX pts is the anchor gap, but the corrected-vs-raw basis gap on a good fit is far
+# smaller) yet below the fixture's contaminated 37-pt swing.
+MAX_BASIS_DISAGREEMENT_POINTS = 25.0
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +203,8 @@ def corrected_basis(
     nq_is_continuous_front_month: bool = True,
     source_skew_seconds: float | None = None,
     max_skew_seconds: float = MAX_SOURCE_SKEW_SECONDS,
+    raw_basis: float | None = None,
+    max_basis_disagreement: float = MAX_BASIS_DISAGREEMENT_POINTS,
 ) -> BasisResult:
     """The C9-corrected basis: NQ - parity_forward, with synchronization + roll flags.
 
@@ -198,6 +213,13 @@ def corrected_basis(
     forward is the options' own implied index anchor (surface.ParityForward.F), internally
     consistent with the quotes (C9). Skew beyond `max_skew_seconds` and the continuous
     front-month nature of NQ=F are FLAGGED, never silently accepted (build-spec.md SS9.1).
+
+    SS9.1 basis OUTLIER filter (review issue #4): when `raw_basis` is supplied, a corrected
+    vs raw disagreement beyond `max_basis_disagreement` index points is FLAGGED
+    (BASIS_OUTLIER). A large swing means the parity anchor is contaminated -- e.g. a small
+    QQQ parity disagreement amplified through the ~41x QQQ->NDX ratio flips the fixture's
+    basis from +21.10 to -15.77 -- and would land on every mapped wall; we surface it
+    rather than silently propagate a bad basis into MNQ prices.
     """
     flags: list[str] = []
     anchor = parity_forward
@@ -214,8 +236,12 @@ def corrected_basis(
     if source_skew_seconds is not None and source_skew_seconds > max_skew_seconds:
         flags.append(f"{BASIS_SOURCE_SKEW}:{source_skew_seconds}")
 
+    corrected = basis(nq_price, anchor)
+    if raw_basis is not None and abs(corrected - raw_basis) > max_basis_disagreement:
+        flags.append(f"{BASIS_OUTLIER}:{round(abs(corrected - raw_basis), 4)}")
+
     return BasisResult(
-        basis=basis(nq_price, anchor),
+        basis=corrected,
         nq_price=nq_price,
         index_anchor=anchor,
         anchor_source=anchor_source,
@@ -223,6 +249,21 @@ def corrected_basis(
         source_skew_seconds=source_skew_seconds,
         quality_flags=flags,
     )
+
+
+def theoretical_forward(spot: float, tau_years: float, r: float = 0.0, q: float = 0.0) -> float:
+    """Theoretical cost-of-carry forward F ~= S*exp[(r-q)*tau] (build-spec.md SS9.1 fallback).
+
+    SS9.1 calls for a theoretical forward fallback for a stale/failed parity fit. With the
+    default r=q=0 this is just the spot; supply measured rate/carry to get the carried
+    forward. Provided as the honest fallback anchor a caller can use when the parity forward
+    is flagged non-finite or the corrected-vs-raw disagreement trips BASIS_OUTLIER.
+    """
+    import math
+
+    if spot <= 0.0 or tau_years < 0.0:
+        return spot
+    return spot * math.exp((r - q) * tau_years)
 
 
 def raw_feed_basis(nq_price: float, feed_spot: float) -> BasisResult:

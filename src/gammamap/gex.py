@@ -139,6 +139,54 @@ def feed_gamma_source(contract: NormalizedContract, spot: float) -> float:
     return float(contract.gamma) if contract.gamma is not None else 0.0
 
 
+def spot_shifted_gamma_source(
+    time_to_expiry: Callable[[NormalizedContract], float],
+    *,
+    r: float = 0.0,
+    q: float = 0.0,
+    fallback_sigma: float = 0.0,
+) -> GammaSource:
+    """Build a gamma source that REPRICES gamma at the hypothetical spot S (flip scan, SS5).
+
+    This is what makes the gamma-flip line actually render on the QQQ v1 path. The feed
+    gamma (feed_gamma_source) is a fixed per-contract number that ignores S, so holding it
+    constant while only S^2 varies leaves NetGEX(S)=S^2*const sign-preserving -- the solver
+    can never find a root and always returns flip_no_root (the review's issue #1).
+
+    Instead, for each (contract, S) we recompute Black-Scholes gamma at the hypothetical
+    spot using the contract's OWN implied vol and its exact time to expiry:
+
+        gamma(S) = phi(d1) / (S*sigma*sqrt(T)),   d1 from (S, K, T, sigma)
+
+    so a strike's gamma peaks as S approaches it and decays away from it. As S sweeps the
+    grid the OI-weighted, dealer-signed net inventory genuinely changes sign and
+    NetGEX(S)=0 has a locatable root (build-spec.md SS5). This is the "spot-shifted
+    Black-Scholes gamma driven by each contract's IV" the surface path already does for NDX
+    (surface_gamma_source); here it is applied to QQQ's clean feed IV for v1.
+
+    `time_to_expiry(contract)` returns the exact year-fraction T to that contract's
+    settlement (surface.time_to_expiry with the exact AM/PM clock, C7). A contract whose IV
+    is missing/non-positive falls back to `fallback_sigma`; if that is also non-positive the
+    contract contributes zero gamma (a dead leg, consistent with bs_gamma's degenerate
+    contract). The reference spot is NOT baked in: gamma is evaluated at whatever S the
+    solver passes, which is the whole point of the scan.
+    """
+    # Imported lazily to keep gex.py's import surface small; surface.py already depends on
+    # numpy/scipy which this module also uses.
+    from .surface import bs_gamma
+
+    def _src(contract: NormalizedContract, spot: float) -> float:
+        sigma = contract.iv if (contract.iv is not None and contract.iv > 0.0) else fallback_sigma
+        if sigma is None or sigma <= 0.0:
+            return 0.0
+        T = time_to_expiry(contract)
+        if T <= 0.0:
+            return 0.0
+        return float(bs_gamma(spot, contract.strike, T, float(sigma), r=r, q=q))
+
+    return _src
+
+
 def surface_gamma_source(surface, *, r: float = 0.0, q: float = 0.0) -> GammaSource:
     """Build a gamma source backed by a fitted IVSurface (NDX path, the C8 fix).
 
@@ -468,11 +516,26 @@ class Strength(Enum):
 
 # Phase-1 within-snapshot GlobalShare thresholds (build-spec.md SS0/SS4). These are
 # DOCUMENTED share cutoffs, explicitly 'uncalibrated' because the paper's bands are
-# ultimately quantile-based against history we do not yet have (SS4). A strike carrying a
-# large fraction of the universe's total |GEX| is structurally dominant TODAY; that is all
-# GlobalShare claims. Ordered high->low so the first satisfied band wins.
+# ultimately quantile-based against history we do not yet have (SS4).
+#
+# DENOMINATOR (fixed in this review): the share is measured against the SAME SIDE's gross
+# |GEX|, not the whole two-sided universe. The wall selector ranks strikes by side-specific
+# |GEX| (a call wall is the top CALL strike, its abs_gex is the call-side contribution), so
+# dividing that side-specific numerator by the two-sided gross understated every share by
+# ~2x -- on the canonical fixture the dominant put wall showed 5.9% and the call wall 3.5%,
+# both under the old 7% MODERATE floor, so EVERY wall on real broad-universe data rendered
+# WEAK and the low/med/high readout the user asked for carried no information (review issue
+# #3). Measuring a call wall against total call-side gross and a put wall against total
+# put-side gross makes numerator and denominator the SAME quantity (a genuine concentration
+# ratio) and restores an informative band: on the fixture the put wall is 11.5% (MODERATE)
+# and the call wall 7.3% (MODERATE).
+#
+# THRESHOLDS (recalibrated for the side-specific denominator): a single strike holding a
+# quarter of one side's entire gamma is overwhelmingly dominant. Ordered high->low so the
+# first satisfied band wins. Still marked 'uncalibrated' (STRENGTH_UNCALIBRATED) because
+# Phase-2 re-expresses these as quantiles against accumulated history (build-spec.md SS4).
 _STRENGTH_BANDS = (
-    (0.25, Strength.EXTREME),   # >=25% of all |GEX| in one strike: dominates the snapshot
+    (0.25, Strength.EXTREME),   # >=25% of the SIDE's |GEX| in one strike: overwhelming
     (0.15, Strength.STRONG),    # >=15%
     (0.07, Strength.MODERATE),  # >=7%
     (0.0, Strength.WEAK),       # everything else
@@ -480,10 +543,27 @@ _STRENGTH_BANDS = (
 
 
 def global_share(abs_gex: float, gross_gex: float) -> float:
-    """GlobalShare = strike |GEX| / total |GEX| in the universe (build-spec.md SS4/SS0)."""
+    """Share = strike |GEX| / gross |GEX| of the matching denominator (build-spec.md SS4/SS0).
+
+    Callers pass the SIDE-SPECIFIC gross (total call-side gross for a call wall, put-side
+    for a put wall) so the numerator and denominator are the same quantity -- a true
+    within-side concentration ratio. See _STRENGTH_BANDS for why the side-specific
+    denominator replaced the two-sided one.
+    """
     if gross_gex <= 0.0:
         return 0.0
     return abs_gex / gross_gex
+
+
+def side_gross_gex(profile: "GEXProfile", side: str) -> float:
+    """Total gross |GEX| on ONE side of a profile (the strength denominator, build-spec SS4).
+
+    Sums |call_gex| (side='call') or |put_gex| (side='put') across every strike. This is the
+    denominator the strength share is measured against so a side's wall is judged relative
+    to that side's own gamma, not diluted by the opposite side (review issue #3).
+    """
+    key = "call_gex" if side == "call" else "put_gex"
+    return float(sum(abs(getattr(a, key)) for a in profile.by_strike.values()))
 
 
 def band_for_share(share: float) -> Strength:
@@ -541,7 +621,9 @@ def assess_strength(
     of the winner). That is the case where the winning line is not meaningfully distinct
     from its neighbour -- we lower confidence rather than move or widen the line (SS9a).
     """
-    share = global_share(wall.abs_gex, profile.gross_gex)
+    # Measure the wall against its OWN side's gross |GEX| (not the two-sided universe), so
+    # the share is a genuine within-side concentration ratio (build-spec.md SS4, review #3).
+    share = global_share(wall.abs_gex, side_gross_gex(profile, side))
     band = band_for_share(share)
     confidence = "high"
     flags: list[str] = [STRENGTH_UNCALIBRATED]
@@ -671,31 +753,59 @@ def solve_gamma_flip(
         dtype=float,
     )
 
-    # A root is a genuine SIGN CHANGE of NetGEX. We locate it by interpolating each
-    # bracket whose endpoints straddle zero. A flat-zero region (e.g. a range of S where
-    # no contract has live gamma) is NOT a family of roots -- only the point where the
-    # curve actually transitions between signs counts, so we detect crossings against the
-    # nearest non-zero neighbours rather than treating every exact zero as its own root.
+    roots = _roots_from_net_curve(grid, net)
+
+    def _net_at(S: float) -> float:
+        return net_gex_at_spot(
+            contracts, S, gamma_at=gamma_at, oi_available=oi_available,
+            sign_model=sign_model, multiplier=multiplier,
+        )
+
+    return _assemble_flip(
+        roots, grid, net, reference_spot, grid_min, grid_max, n_grid,
+        net_at=_net_at, surface_dynamics=surface_dynamics, sign_model=sign_model,
+    )
+
+
+def _roots_from_net_curve(grid: np.ndarray, net: np.ndarray) -> list[float]:
+    """Locate every genuine sign change of the NetGEX curve on `grid` (build-spec.md SS5).
+
+    A root is a genuine SIGN CHANGE of NetGEX, located by interpolating each bracket whose
+    endpoints straddle zero. A flat-zero region (a range of S with no live gamma) is NOT a
+    family of roots -- only the point where the curve actually transitions between signs
+    counts, so an exact zero is counted only when the curve LEAVES zero with the opposite
+    sign. Shared-node double counts are de-duplicated.
+    """
     roots: list[float] = []
     for i in range(len(grid) - 1):
         y0, y1 = net[i], net[i + 1]
         if y0 * y1 < 0.0:
-            # Opposite signs: interpolate the zero crossing within the bracket.
             x0, x1 = grid[i], grid[i + 1]
             root = x0 - y0 * (x1 - x0) / (y1 - y0)
             roots.append(float(root))
         elif y0 != 0.0 and y1 == 0.0:
-            # Curve lands exactly on zero at grid[i+1]. Only count it as a crossing if the
-            # curve LEAVES zero on the far side with the opposite sign (a true transition),
-            # not if it merely touches or flattens onto zero.
             j = i + 2
             while j < len(grid) and net[j] == 0.0:
                 j += 1
             if j < len(grid) and y0 * net[j] < 0.0:
                 roots.append(float(grid[i + 1]))
-    # De-duplicate roots that a shared node can double-count.
-    roots = sorted(set(round(r, 9) for r in roots))
+    return sorted(set(round(r, 9) for r in roots))
 
+
+def _assemble_flip(
+    roots: list[float],
+    grid: np.ndarray,
+    net: np.ndarray,
+    reference_spot: float,
+    grid_min: float,
+    grid_max: float,
+    n_grid: int,
+    *,
+    net_at: Callable[[float], float],
+    surface_dynamics: str,
+    sign_model: SignModel,
+) -> GammaFlip:
+    """Assemble a GammaFlip from located roots: choose the nearest, read actual signs (SS5)."""
     flags: list[str] = []
     if not roots:
         flags.append(FLIP_NO_ROOT)
@@ -718,14 +828,8 @@ def solve_gamma_flip(
 
     # ACTUAL sign each side, measured from the curve just off the chosen root (SS5).
     eps = max((grid_max - grid_min) / (n_grid * 4.0), 1e-9)
-    below = net_gex_at_spot(
-        contracts, chosen - eps, gamma_at=gamma_at, oi_available=oi_available,
-        sign_model=sign_model, multiplier=multiplier,
-    )
-    above = net_gex_at_spot(
-        contracts, chosen + eps, gamma_at=gamma_at, oi_available=oi_available,
-        sign_model=sign_model, multiplier=multiplier,
-    )
+    below = net_at(chosen - eps)
+    above = net_at(chosen + eps)
 
     return GammaFlip(
         flip=chosen,
@@ -737,6 +841,88 @@ def solve_gamma_flip(
         surface_dynamics=surface_dynamics,
         sign_model=sign_model,
         quality_flags=flags,
+    )
+
+
+def solve_gamma_flip_bs(
+    contracts: Iterable[NormalizedContract],
+    *,
+    time_to_expiry: Callable[[NormalizedContract], float],
+    oi_available: bool,
+    grid_min: float,
+    grid_max: float,
+    reference_spot: float,
+    n_grid: int = 400,
+    sign_model: SignModel = SignModel.DEALER_SHORT_GAMMA,
+    multiplier: float = DEFAULT_MULTIPLIER,
+    surface_dynamics: str = "sticky_strike",
+    r: float = 0.0,
+    q: float = 0.0,
+) -> GammaFlip:
+    """Vectorized flip solver: reprice BS gamma from each contract's IV across the grid (SS5).
+
+    Numerically identical in intent to solve_gamma_flip with a spot_shifted_gamma_source,
+    but VECTORIZED over the whole spot grid with numpy so it is fast enough for the ~8000
+    contract live universe (the scalar per-contract scan is ~2.8M scipy pdf calls and times
+    out). For each contract we precompute (K, sigma, T, signed_weight); the whole NetGEX
+    curve is then N_grid dense evaluations of the closed-form BS gamma, done as array ops.
+
+    Gamma is recomputed at every hypothetical spot (the point of the scan): a strike's
+    gamma peaks as S approaches K and decays away, so the OI-weighted, dealer-signed net
+    inventory genuinely changes sign and NetGEX(S)=0 has a locatable root. Contracts with a
+    missing/non-positive IV or T<=0 contribute zero gamma (dead legs), matching bs_gamma.
+    """
+    from scipy.stats import norm
+
+    Ks: list[float] = []
+    sigmas: list[float] = []
+    Ts: list[float] = []
+    signed_w: list[float] = []
+    for c in contracts:
+        sigma = c.iv if (c.iv is not None and c.iv > 0.0) else None
+        if sigma is None:
+            continue
+        T = time_to_expiry(c)
+        if T <= 0.0:
+            continue
+        weight, _ = _oi_or_proxy(c, oi_available)
+        if weight == 0.0:
+            continue
+        Ks.append(float(c.strike))
+        sigmas.append(float(sigma))
+        Ts.append(float(T))
+        signed_w.append(sign_for(c.type, sign_model) * weight)
+
+    grid = np.linspace(grid_min, grid_max, n_grid)
+    if not Ks:
+        return _assemble_flip(
+            [], grid, np.zeros(n_grid), reference_spot, grid_min, grid_max, n_grid,
+            net_at=lambda S: 0.0, surface_dynamics=surface_dynamics, sign_model=sign_model,
+        )
+
+    K = np.asarray(Ks)[:, None]          # (M, 1)
+    sig = np.asarray(sigmas)[:, None]    # (M, 1)
+    T = np.asarray(Ts)[:, None]          # (M, 1)
+    w = np.asarray(signed_w)[:, None]    # (M, 1)
+    sqrt_t = np.sqrt(T)
+
+    def _net_curve(spots: np.ndarray) -> np.ndarray:
+        S = np.asarray(spots, dtype=float)[None, :]   # (1, G)
+        d1 = (np.log(S / K) + (r - q + 0.5 * sig * sig) * T) / (sig * sqrt_t)
+        gamma = norm.pdf(d1) / (S * sig * sqrt_t)      # (M, G)
+        # GEX_i(S) = signed_w_i * gamma_i(S) * M * S^2 * 0.01 ; sum over contracts.
+        per = w * gamma * multiplier * (S * S) * 0.01
+        return per.sum(axis=0)                          # (G,)
+
+    net = _net_curve(grid)
+    roots = _roots_from_net_curve(grid, net)
+
+    def _net_at(S: float) -> float:
+        return float(_net_curve(np.array([S]))[0])
+
+    return _assemble_flip(
+        roots, grid, net, reference_spot, grid_min, grid_max, n_grid,
+        net_at=_net_at, surface_dynamics=surface_dynamics, sign_model=sign_model,
     )
 
 

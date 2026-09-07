@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.1.0",
+  "captured_at": "2026-09-08T16:00:05+00:00",
+  "synthetic": true,
+  "synthetic_note": "Hand-built same-trading-day-expiry QQQ fixture for the 0DTE + strength end-to-end test (review issues #2/#6). NOT real market data.",
+  "chains": {
+    "QQQ": {
+      "symbol": "QQQ",
+      "retrieved_at": "2026-09-08T16:00:05+00:00",
+      "feed_timestamp": "2026-09-08 12:00:00",
+      "quote_timestamp": "2026-09-08T12:00:00",
+      "spot": 590.0,
+      "contract_count": 30,
+      "raw_file": "chain_qqq.json.gz",
+      "oi_freshness": "previous_settlement_unknown_date",
+      "expiry_contract_counts": {}
+    }
+  },
+  "quotes": {
+    "NQ=F": {
+      "symbol": "NQ=F",
+      "retrieved_at": "2026-09-08T16:00:05+00:00",
+      "price": 24300.0,
+      "currency": "USD",
+      "exchange": "CME",
+      "is_continuous_series": true
+    },
+    "MNQ=F": {
+      "symbol": "MNQ=F",
+      "retrieved_at": "2026-09-08T16:00:05+00:00",
+      "price": 24300.0,
+      "currency": "USD",
+      "exchange": "CME",
+      "is_continuous_series": true
+    },
+    "^NDX": {
+      "symbol": "^NDX",
+      "retrieved_at": "2026-09-08T16:00:05+00:00",
+      "price": 24290.0,
+      "currency": "USD",
+      "exchange": "NIM",
+      "is_continuous_series": false
+    }
+  },
+  "distilled": {
+    "QQQ": {
+      "greeks_file": "greeks_qqq.csv.gz",
+      "oi_file": "oi/qqq_9d6f185338c6.csv.gz",
+      "oi_digest": "9d6f185338c6",
+      "rows_in": 30,
+      "rows_kept": 30,
+      "rows_dropped_no_exposure": 0,
+      "rows_unparsed": 0,
+      "dropped_oi_total": 0,
+      "dropped_volume_total": 0,
+      "lossless_for_gex": true,
+      "roots": {
+        "QQQ": 30
+      },
+      "duplicate_keys": 0
+    }
+  },
+  "derived": {
+    "ndx_spot": 24290.0,
+    "qqq_spot": 590.0,
+    "nq_price": 24300.0,
+    "mnq_price": 24300.0,
+    "basis": 10.0,
+    "qqq_ndx_ratio": 0.02428983120625772,
+    "nq_mnq_divergence": 0.0,
+    "source_skew_seconds": 0.0,
+    "quality_flags": [
+      "nq_quote_is_continuous_front_month",
+      "synthetic_fixture"
+    ]
+  },
+  "errors": {},
+  "notes": {
+    "mapping": "NDX strike --(+basis)--> NQ --(1:1)--> MNQ. Output renders on MNQ.",
+    "primary_instrument": "QQQ",
+    "purpose": "0DTE + strength end-to-end fixture (synthetic)."
+  }
+}
