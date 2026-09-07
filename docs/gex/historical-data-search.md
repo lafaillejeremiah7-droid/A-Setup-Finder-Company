@@ -6,6 +6,45 @@ rather than only capture-forward?
 
 Every entry below was probed live, not assumed. Verdict first, evidence after.
 
+## ⭐⭐ BEST FREE HISTORICAL SOURCE FOUND: Kaggle CC0 QQQ option chains (2020–2022)
+
+After the paid-wall dead-ends below, a genuinely free, unrestricted historical source was found on Kaggle
+and **verified by anonymous download** (no auth needed for the download endpoint; the file-list endpoint is
+gated but `GET /api/v1/datasets/download/{ref}` streams the ZIP directly).
+
+- **`kylegraupe/qqq-daily-option-chains-q1-2020-to-q4-2022`** — **License `CC0: Public Domain`** (no
+  restrictions; may be committed/redistributed). 628 MB unzipped, single file `qqq_2020_2022.csv`,
+  1,184 downloads, usability 1.0.
+- Companion CC0 sets by the same author: `spy-daily-eod-options-quotes-2020-2022` (1.28 GB),
+  `nvda-...`, `tsla-...`, `aapl-options-data-2016-2020`.
+
+**Verified schema (decompressed the real CSV header + rows from the live download):**
+```
+QUOTE_UNIXTIME, QUOTE_READTIME, QUOTE_DATE, QUOTE_TIME_HOURS, UNDERLYING_LAST,
+EXPIRE_DATE, EXPIRE_UNIX, DTE,
+C_DELTA, C_GAMMA, C_VEGA, C_THETA, C_RHO, C_IV, C_VOLUME, C_LAST, C_SIZE, C_BID, C_ASK,
+STRIKE,
+P_BID, P_ASK, P_SIZE, P_LAST, P_DELTA, P_GAMMA, P_VEGA, P_THETA, P_RHO, P_IV, P_VOLUME,
+STRIKE_DISTANCE, STRIKE_DISTANCE_PCT
+```
+Greeks (C_/P_ GAMMA, DELTA, VEGA, THETA, RHO), C_/P_ IV, underlying spot, and DTE are all **populated**.
+This is the complete GEX input set with **greeks pre-computed** — no IV inversion needed for replay on
+these dates, unlike marketdata.app.
+
+**Limits (honest):**
+- **EOD only** — description confirms "daily at 4:00 pm EST." One snapshot/day, so a replayed day shows
+  static walls (same as every other affordable source; intraday remains paid-only).
+- **Coverage window 2020–2022** for QQQ (SPY same; AAPL 2016–2020). Not current, and no NDX — but QQQ is
+  the primary v1 instrument, and 3 years of QQQ EOD chains is a huge, permanent, free backtest corpus.
+- **No open-interest column** — has C_/P_ VOLUME and full greeks but not OI. GEX = Γ×OI needs OI, so for
+  these Kaggle dates OI must be sourced elsewhere or the engine must run a **volume-weighted proxy** and
+  flag it. This is the one real gap. (CBOE live and the go-forward capture DO have OI, so it only affects
+  the 2020–2022 Kaggle backfill.)
+
+**Role in the stack:** the permanent, free, CC0 historical backbone for QQQ replay/backtest over 2020–2022.
+Combined with go-forward CBOE capture, this gives real replay days at \$0 with no trial clock. Download once,
+commit distilled, done.
+
 ## Verdict (updated — a free by-date source WAS found)
 
 **`marketdata.app` provides historical option chains by date on a Free Forever tier** (100 chains/day, 1
