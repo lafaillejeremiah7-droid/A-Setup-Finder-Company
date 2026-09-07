@@ -1,0 +1,26 @@
+{
+  "id": "FEAT-001",
+  "type": "chore",
+  "description": "Establish the Python test/dev baseline for the engine. No test framework or dependency manifest exists yet. Pin the pyenv interpreter, add a dependency declaration, create the tests/ tree, and prove the existing capture layer (sources/distill/capture) imports and round-trips against the committed fixture snapshot. This confirms a green baseline before any new engine code is added.",
+  "status": "completed",
+  "steps": [
+    "Confirm interpreter: in a single bash call `export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && python --version`. Env exports and /tmp do NOT persist across bash calls, so always re-export in the same call.",
+    "Add a requirements-dev.txt at repo root listing: numpy, scipy, pytest (these install cleanly from PyPI; numpy 2.4.6 / scipy 1.17.1 verified). Do NOT add pandas as a hard requirement; the Kaggle loader may parse the CSV with stdlib csv or optionally pandas -- keep the core engine stdlib+numpy+scipy only, matching the existing stdlib-first style.",
+    "Install deps: `pip install -r requirements-dev.txt` (same bash call as the pyenv export).",
+    "Create tests/ at repo root with tests/conftest.py that inserts src/ onto sys.path (or rely on PYTHONPATH=src) and exposes a fixture pointing at the committed snapshot dir data/snapshots/2026-09-06/230612Z and the repo data/snapshots root.",
+    "Add tests/test_capture_layer.py that: (a) loads the committed distilled greeks_qqq.csv.gz + its oi CSV, joins on (root,expiry,type,strike), recomputes gross GEX with GEX=Gamma*OI*M*S^2*0.01 (M=100 for QQQ, S=717.5) and asserts it is finite and > 0; (b) asserts distill.parse_osi round-trips a known OSI symbol e.g. 'QQQ260904C00715000' -> ('QQQ','260904','C',715.0) and '_NDX' style 'NDXP260908P29000000'; (c) asserts the NDX distilled file contains BOTH 'NDX' and 'NDXP' roots (C7 split) per meta.json roots counts.",
+    "Add a short README note or docstring confirming: run tests with `PYTHONPATH=src python -m pytest tests/ -q` after exporting pyenv and installing requirements-dev.txt.",
+    "Commit on nuke_root: 'chore: add pytest baseline and dev requirements; verify capture layer round-trips'."
+  ],
+  "acceptance_criteria": [
+    "`PYTHONPATH=src python -m pytest tests/ -q` runs and all tests pass (with pyenv 3.11.15 exported and requirements-dev.txt installed in the same shell).",
+    "requirements-dev.txt exists at repo root and pip-installs without error.",
+    "tests/test_capture_layer.py exercises the real committed fixture (not mocks) and the gross-GEX recomputation is a positive finite number.",
+    "The NDX distilled fixture is confirmed to contain both NDX and NDXP roots."
+  ],
+  "verification": [
+    "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && pip install -r requirements-dev.txt >/dev/null && PYTHONPATH=src python -m pytest tests/ -q"
+  ],
+  "blocked_reason": null,
+  "findings": "Baseline green. pyenv 3.11.15, numpy 2.4.6, scipy 1.17.1, pytest already present (v9.1.1). Created requirements-dev.txt (numpy/scipy/pytest, unpinned; no pandas per style), tests/conftest.py (inserts src/ on sys.path + snapshot fixtures), tests/test_capture_layer.py (5 tests, all pass in 0.08s). No README existed at repo root so created one with the run-tests note. Verified against real committed fixture data/snapshots/2026-09-06/230612Z: QQQ gross GEX recompute (GEX=Gamma*OI*100*717.5^2*0.01) is finite and >0 with all 7943 greeks rows matching OI on the full (root,expiry,type,strike) key; parse_osi round-trips QQQ260904C00715000 and NDXP260908P29000000; NDX greeks file contains both NDX(2568) and NDXP(3283) roots matching meta.json. Sandbox quirk confirmed: must re-export pyenv + PYTHONPATH=src in every bash call. Ran: PYTHONPATH=src python -m pytest tests/ -q -> 5 passed."
+}

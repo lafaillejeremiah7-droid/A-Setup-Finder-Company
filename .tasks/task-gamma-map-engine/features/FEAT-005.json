@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-005",
+  "type": "feat",
+  "description": "Mapping engine (build-order step 5) + levels writer (build-order step 6). Map index/ETF strikes into MNQ price and emit the versioned levels JSON file the Tradovate indicator consumes. Mapping: NDX strike --(+basis)--> NQ --(1:1, verified 0.0000)--> MNQ, where basis = NQ - parity-implied index anchor (C9, NOT current_price -- this fixes the contamination in capture.py's Derived.basis). QQQ path maps via the QQQ/NDX ratio then basis (or direct QQQ->NQ). The basis leg is MANDATORY (dropping it is the C2 error). NQ=F is continuous front-month -- flag it and document contract-roll handling as a known limitation. The levels file carries the 4 walls (MNQ price, $GEX/1%, strength), the flip line, the TOTAL/0DTE regime, and provenance/quality flags. Replay-correct: one levels file per point-in-time snapshot/date with strict no-look-ahead.",
+  "steps": [
+    "Create src/gammamap/mapping.py. Implement basis(nq_price, index_anchor) = nq_price - index_anchor where index_anchor is the parity-implied forward/spot from FEAT-003 (C9), NOT current_price. Implement map_ndx_to_mnq(ndx_level, basis) = ndx_level + basis (then 1:1 to MNQ). Implement the QQQ path: ratio r = QQQ/NDX (drifts, recompute live), K_NDXeq = K_QQQ / r, then +basis; expose it and allow a direct QQQ->NQ alternative, documenting the choice.",
+    "Reference check (build-spec SS2.1 / findings C2, PROVEN): NDX 24200 with NQ 24242 -> basis +42; NDX level 24342 -> NQ 24384; zone 24250-24350 NDX -> 24292-24392 NQ. Reproduce these in a test.",
+    "Fix the C9 contamination: add a corrected basis path used by the levels writer that takes the parity-implied anchor rather than reusing capture.py's current_price-based Derived.basis. Do NOT silently rewrite historical meta.json; compute the corrected basis at levels-build time and record both the raw feed basis and the corrected parity basis with a note. Flag NQ=F continuous-front-month ('nq_quote_is_continuous_front_month') and add a documented limitation comment about quarterly-roll resolution being out of v1 scope. Enforce source-timestamp synchronization (reuse capture.py's MAX_SOURCE_SKEW_SECONDS concept) and flag skew.",
+    "Create src/gammamap/levels.py: a build_levels(snapshot/asof, instrument) function that runs source-abstraction -> surface (parity forward) -> GEX -> mapping and emits a versioned dict: schema/model versions, asof timestamp, instrument, the 4 walls each as {label, mnq_price, gex_per_1pct, strength, confidence}, the gamma flip {mnq_price, neutral, other_roots}, regime {total_sign, zerodte_sign, divergence}, and provenance {source, oi_available/proxy flag, quality_flags, basis_raw, basis_parity}. HIDE OI/IV/greeks/MaxPain/full-chain from the emitted file (they are ingredients only, per SS9a). Serialize deterministically (sorted keys) and write to a stable path e.g. data/levels/<date>/<time>_<instrument>.json.",
+    "No-look-ahead: build_levels must only consume data known as of the asof timestamp (the point-in-time snapshot). Add an explicit assertion/guard that the asof is >= all source timestamps used and that no future snapshot leaks in.",
+    "Produce and COMMIT a real levels file for the committed live snapshot 2026-09-06/230612Z for QQQ (v1 path). Keep it small.",
+    "Add tests/test_mapping_levels.py: (a) basis and NDX->MNQ mapping reproduce the Appendix +42 basis reference exactly; (b) build_levels on the committed QQQ snapshot produces a valid levels dict with 4 walls at real MNQ prices, a flip line, a regime, and provenance flags; the QQQ path is marked true-GEX (oi_available); (c) the levels file schema round-trips (write then read); (d) no-look-ahead guard raises/flags if a source timestamp is after asof; (e) the corrected parity basis differs from the raw current_price basis (C9) and both are recorded.",
+    "Commit on nuke_root: 'feat: mapping engine (parity basis, C9 fix) + versioned levels writer with no-look-ahead'."
+  ],
+  "acceptance_criteria": [
+    "Mapping reproduces the build-spec Appendix reference: NDX 24200 / NQ 24242 -> basis +42; zone 24250-24350 NDX -> 24292-24392 NQ.",
+    "basis is computed from the parity-implied index anchor (C9), not current_price, and both raw and corrected basis are recorded.",
+    "build_levels emits a versioned JSON with exactly the 4 walls (MNQ price, $GEX/1%, strength), flip line, and TOTAL/0DTE regime, plus provenance/quality flags; OI/IV/greeks/MaxPain are NOT in the file.",
+    "A real QQQ levels file for the committed 2026-09-06 snapshot is generated and committed.",
+    "No-look-ahead guard rejects/flags any source timestamp later than asof.",
+    "NQ=F continuous-front-month is flagged and roll handling documented as a limitation.",
+    "All tests pass."
+  ],
+  "verification": [
+    "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && PYTHONPATH=src python -m pytest tests/test_mapping_levels.py -q"
+  ],
+  "type": "feat",
+  "status": "pending",
+  "blocked_reason": null,
+  "findings": ""
+}

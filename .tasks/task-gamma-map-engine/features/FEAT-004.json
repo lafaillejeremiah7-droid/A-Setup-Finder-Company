@@ -1,0 +1,32 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "GEX engine (build-order step 4). Compute per-strike signed GEX in $/1% move (GEX = s*Gamma*OI*M*S^2*0.01), aggregate by strike, split Total (broad expiry universe) vs 0DTE (only options expiring the current trading day; for NDX that is the NDXP PM-settled root per C7), select the single max-|GEX| strike per side for each of the 4 walls (Call Wall, Put Wall, 0DTE Call Wall, 0DTE Put Wall -- NO zones, single line each per SS9a), solve the gamma flip NetGEX(S)=0 by repricing gamma across a spot grid, and compute GlobalShare -> WEAK/MODERATE/STRONG/EXTREME strength bands. The +-S*sigma*sqrt(T) resolution floor feeds CONFIDENCE (lower strength when #1 and #2 strikes are within the floor with near-equal |GEX|), it does NOT set a zone width. Gamma source: QQQ v1 uses feed gamma; NDX uses FEAT-003 surface gamma (C8). OI source: true OI when available, else the flagged volume proxy (Kaggle).",
+  "status": "pending",
+  "steps": [
+    "Create src/gammamap/gex.py. Implement per-strike GEX with the exact convention in build-spec SS2: GEX_i = s_i * Gamma_i * OI_i * M_i * S^2 * 0.01 ($ delta per 1% move). Report BOTH NetGEX = sum(GEX_i) and GrossGEX = sum(|GEX_i|). Multiplier M=100 for both QQQ and NDX index options. s_i is the dealer sign convention (calls +, puts - under the standard dealer-short-gamma assumption); keep the sign model as an explicit parameter so an alternative can be stressed (build-spec SS5, findings C6). When OI is unavailable (Kaggle), substitute volume as a proxy and tag the result proxy=True with the 'oi_absent_volume_proxy' flag -- NEVER present a proxy wall as classic OI-GEX.",
+    "Gamma selection: accept a gamma_source callable so QQQ v1 passes feed gamma directly and NDX passes surface.surface_gamma (C8). Aggregate GEX by strike within the chosen expiry universe.",
+    "Universes: Total = the broad expiry universe (all expiries in the chain, respecting AM/PM live-ness on the asof date); 0DTE = only contracts expiring the current trading day, and for NDX restrict to the NDXP PM-settled root (AM-settled NDX on its expiry date already stopped trading -- do not fabricate 0DTE exposure, C7 / feed-quality SS6).",
+    "Wall selection: for each of the 4 structures rank strikes by side-specific |GEX| and take the #1 strike (single line, no clustering, per SS9a). Return strike, signed $GEX/1%, and side.",
+    "Strength: GlobalShare = strike's |GEX| / total |GEX| in that universe (within-snapshot, no history needed -- build-spec SS0). Map to WEAK/MODERATE/STRONG/EXTREME via documented within-snapshot-share thresholds, and mark them 'uncalibrated' (Phase-1) since paper SS4 bands are ultimately quantile-based. Lower the band/confidence when the #1 and #2 strikes are within +-S*sigma*sqrt(T) (the resolution floor, findings contribution 3) with near-equal |GEX|.",
+    "Gamma flip: solve NetGEX(S*)=0 by repricing every option's gamma across a dense hypothetical-spot grid (recompute gamma at each grid S; use surface IV for NDX). Evaluate the ACTUAL sign on each side (do not hardcode 'above flip = positive'); if multiple roots exist, return the nearest economically relevant root and flag the others (build-spec SS5). Record the surface-dynamics assumption used (e.g. sticky-strike).",
+    "Regime: emit TOTAL sign (+/-) and 0DTE sign (+/-) and a divergence flag when they disagree (build-spec SS6 table).",
+    "Add tests/test_gex.py verifying the build-spec Appendix reference points: (a) GEX round-trips numerically -- a constructed chain reproduces a known NetGEX including the -$7.50B example and the 250-NQ-contracts example from the appendix; (b) the 4-wall selection picks the true max-|GEX| strike on a constructed chain with a known dominant strike per side; (c) MaxPain helper returns 100 for the appendix MaxPain=100 example (compute Pain(P) per build-spec SS2 and argmin); (d) the flip solver finds NetGEX ~= 0 at the known crossing of a constructed monotone NetGEX(S) curve; (e) GlobalShare bands: a chain with one dominant strike lands EXTREME, a flat chain lands WEAK; (f) resolution-floor confidence: two near-equal adjacent strikes within +-S*sigma*sqrt(T) lower the strength vs a well-separated dominant strike; (g) proxy path: a Kaggle-sourced chain produces GEX tagged proxy=True.",
+    "Commit on nuke_root: 'feat: GEX engine -- per-strike $GEX/1%, 4-wall selection, gamma flip, GlobalShare strength'."
+  ],
+  "acceptance_criteria": [
+    "GEX round-trips numerically against the build-spec Appendix reference (-$7.50B / 250 NQ contracts) within tolerance.",
+    "The 4-wall selector returns the true max-|GEX| strike for each of Call/Put/0DTE-Call/0DTE-Put on a constructed chain.",
+    "MaxPain helper reproduces the appendix MaxPain=100 example.",
+    "The gamma-flip solver locates NetGEX ~= 0 (|NetGEX| below a small tolerance) on a constructed curve and reports multiple roots when present.",
+    "0DTE for NDX uses only the NDXP PM-settled root and excludes AM-settled NDX on its expiry date.",
+    "GlobalShare bands map to WEAK/MODERATE/STRONG/EXTREME and are marked uncalibrated; resolution-floor proximity lowers confidence.",
+    "A Kaggle (no-OI) chain yields GEX flagged as a volume proxy, never as true OI-GEX.",
+    "All tests pass."
+  ],
+  "verification": [
+    "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && PYTHONPATH=src python -m pytest tests/test_gex.py -q"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

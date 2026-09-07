@@ -1,0 +1,7 @@
+{
+  "task_id": "task-gamma-map-engine",
+  "task_description": "Build The Gamma Map indicator end to end (build-order steps 2-8): a level-calculator engine that turns CBOE-live and Kaggle-historical option chains into MNQ price levels, and a thin Tradovate JS indicator that renders exactly 5 lines (Call Wall, Put Wall, 0DTE Call Wall, 0DTE Put Wall, Gamma Flip) plus a TOTAL/0DTE gamma regime readout, with strength = within-snapshot GEX concentration (WEAK/MODERATE/STRONG/EXTREME), replay-correct with strict no-look-ahead. QQQ is the v1 path (clean feed gamma); NDX/NDXP is v2 unlocked by the IV-surface engine. Enforces verified corrections C1-C9: parity forward not current_price (C9), gamma-from-IV for NDX (C8), NDX/NDXP root split (C7), mandatory NDX->NQ basis (C2), strength=concentration not probability (C1/SS4). Capture layer (step 1) is already DONE; reuse it. Backtest harness (step 9) is DEFERRED.",
+  "status": "in_progress",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005", "FEAT-006", "FEAT-007"],
+  "blocked_reason": null
+}
