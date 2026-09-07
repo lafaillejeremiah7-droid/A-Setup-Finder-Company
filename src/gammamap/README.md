@@ -154,6 +154,24 @@ PYTHONPATH=src python scripts/backfill_kaggle.py --dates 2021-03-01 2022-01-03
 Only the small per-date JSON files under `data/levels/kaggle/` are committed; the raw zip
 and CSV under `data/kaggle_raw/` are gitignored.
 
+#### The committed `data/levels/kaggle/*.json` are PRE-FIX diagnostics (staleness note)
+
+The 23 `data/levels/kaggle/*.json` files currently committed were generated in `337bdb0`,
+**before** the spot-repriced-flip and side-specific-strength fix in commit `0caa46c`. They
+therefore still show `gamma_flip.neutral: true` and all-`WEAK` strength, which no longer
+matches the current engine: the post-fix `build_kaggle_levels` would produce spot-repriced
+flips (Kaggle CSVs carry `C_IV`/`P_IV`) and side-specific strength if re-run. They are
+retained **only as volume-proxy diagnostics** (they stay correctly `proxy: true` /
+`oi_absent_volume_proxy` and never feed the live MNQ path), not as current engine output.
+
+This is machine-visible, not just prose: every one of these committed files carries
+`provenance.stale_before_flip_fix: true` and
+`provenance.generator_version: "kaggle-backfill-1.0.0-pre-flip-fix"`. To get
+current-engine values, re-run `scripts/backfill_kaggle.py` (which downloads the CC0
+dataset); freshly generated files carry `stale_before_flip_fix: false` and
+`generator_version: "kaggle-backfill-1.1.0"` instead. Regenerating is deferred here only
+because it requires the gitignored ~628MB raw dataset, not because of any code issue.
+
 ### PROXY caveat for historical dates (read this)
 
 Historical Kaggle levels are **not** classic OI-GEX and are **not** on the MNQ price axis:

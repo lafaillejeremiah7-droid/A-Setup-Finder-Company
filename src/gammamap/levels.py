@@ -72,6 +72,15 @@ from .surface import SURFACE_MODEL_VERSION, forward_from_parity, time_to_expiry
 # ---------------------------------------------------------------------------
 LEVELS_SCHEMA_VERSION = "levels-1.0.0"
 
+# Generator version stamped on every FRESH Kaggle level, bumped when a change to the
+# historical path alters the numbers it produces. It exists so a committed historical file
+# is self-describing about WHICH engine wrote it: the pre-fix diagnostic files committed in
+# 337bdb0 (before the spot-repriced-flip + side-specific-strength fix in 0caa46c) predate
+# this stamp and instead carry the explicit `stale_before_flip_fix: true` marker (see the
+# "historical / Kaggle" section of src/gammamap/README.md). Re-running scripts/backfill_kaggle.py
+# overwrites them with current-engine values that carry this version and `stale_before_flip_fix: false`.
+KAGGLE_LEVELS_GENERATOR_VERSION = "kaggle-backfill-1.1.0"  # post-0caa46c (flip + strength fix)
+
 # Emitted on every historical Kaggle level: those dates have NO synchronized NQ futures
 # quote, so the NDX->NQ basis (C2) cannot be measured. We map into QQQ/NDX-equivalent
 # INDEX space and set mnq_price=None rather than fabricate a basis (build-spec.md SS2.1;
@@ -545,6 +554,13 @@ def build_kaggle_levels(
             "oi_available": oi_available,
             # PROXY is always True here: GEX came from the volume proxy, never OI.
             "proxy": not oi_available,
+            # Self-describing provenance for the historical path: which backfill engine
+            # wrote this file, and whether it predates the spot-repriced-flip +
+            # side-specific-strength fix (0caa46c). A freshly generated file is current, so
+            # this is always False here; the committed pre-fix diagnostics carry True (see
+            # src/gammamap/README.md). This removes the ambiguity flagged in review v2 #1.
+            "generator_version": KAGGLE_LEVELS_GENERATOR_VERSION,
+            "stale_before_flip_fix": False,
             "quality_flags": sorted(set(quality_flags)),
             "parity_forward": (round(anchor_forward, 4) if anchor_forward is not None else None),
             "parity_r2": (round(parity_r2, 6) if parity_r2 is not None else None),

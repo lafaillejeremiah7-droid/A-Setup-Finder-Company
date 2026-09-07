@@ -16,6 +16,7 @@
   "provenance": {
     "basis_parity": null,
     "feed_spot": 322.83,
+    "generator_version": "kaggle-backfill-1.0.0-pre-flip-fix",
     "nq_price": null,
     "oi_available": false,
     "parity_forward": 322.8401,
@@ -25,7 +26,8 @@
       "basis_unavailable_no_synchronized_nq_quote",
       "oi_absent_volume_proxy"
     ],
-    "source": "kaggle_qqq_2020_2022"
+    "source": "kaggle_qqq_2020_2022",
+    "stale_before_flip_fix": true
   },
   "quote_date": "2022-08-03",
   "regime": {
