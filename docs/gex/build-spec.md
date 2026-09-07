@@ -76,9 +76,10 @@ Volume Profile: marked MANUALLY on the futures chart (not computed)
 | Research store | immutable timestamped snapshots for backtest and model audit |
 
 **Tradovate's role is confirmed as a thin renderer** — the paper never asks the indicator to compute
-GEX. It draws Call Wall Zone, Put Wall Zone, 0DTE Call/Put Zones, a shaded Gamma Flip Zone, and optional
-thin core-strike lines (§10.4). This resolves the earlier blocker: Tradovate cannot fetch options data,
-and per the paper it does not need to.
+GEX. Per the no-zones simplification (§0 / §9a) it draws **four single lines** — Call Wall, Put Wall,
+0DTE Call Wall, 0DTE Put Wall — plus a neutral **Gamma Flip line**. (The paper's original wording said
+"zones"; the user has simplified rendering to lines only.) This resolves the earlier blocker: Tradovate
+cannot fetch options data, and per the paper it does not need to.
 
 ---
 
@@ -136,7 +137,13 @@ mis-places every wall by roughly \$422 per NQ contract of level error.
 
 ---
 
-## 3. Zone algorithm (§4.2, Appendix C)
+## 3. Wall selection & the (retired) zone algorithm (§4.2, Appendix C)
+
+> **RENDER RULE (authoritative): each wall is the single max-|GEX| strike, drawn as one line.** The
+> clustering algorithm below is **retired from the render path** by the no-zones simplification (§9a). It
+> is kept here as an *internal diagnostic* only — e.g. to compute the strength/confidence rating (how
+> dominant the #1 strike is over its neighbours). Steps 1–3 and 9 still run; steps 4–8 (cluster growth,
+> merge, core/centroid) no longer drive what appears on the chart.
 
 ```
 1. Filter invalid/stale series; compute gamma for every option from the CURRENT surface
@@ -303,30 +310,46 @@ The user supplied a concrete, minimal spec for the finished Tradovate indicator.
 document almost point-for-point. Recording it as the **authoritative shape of the output**, plus the
 three places it meets a measured constraint.
 
-**The user's rules (verbatim intent):**
-- Four independent structures: **Call Wall, Put Wall, 0DTE Call Wall, 0DTE Put Wall.**
-- Each: **rank strikes by side-specific GEX magnitude, take top 3.** Clustered → **Zone** (core = strongest
-  of the three). Dispersed → **single line at the strongest strike.** Cluster-vs-dispersed threshold is to
-  be **fixed and tested**, not left subjective.
+> ### 🔧 SIMPLIFICATION (user, 2026-09-06): NO ZONES. Every wall is a single line.
+> The zone/rectangle rendering and the clustered-vs-dispersed rule are **dropped entirely.** Each wall is
+> **always a single horizontal line at the strongest (max-|GEX|) strike** for its side. This removes the
+> cluster/dispersed threshold tuning problem completely — there is nothing to tune. All four structures
+> stay; the Gamma Flip line stays. See §9a below as amended.
+
+**The user's rules (as amended by the no-zones simplification):**
+- Four independent structures, **each rendered as a single line at its strongest strike**:
+  **Call Wall, Put Wall, 0DTE Call Wall, 0DTE Put Wall.**
+- Selection per structure: **rank strikes by side-specific |GEX|, take the #1 strike.** That strike's price
+  is the line. (Top-3 is now only an internal diagnostic if wanted; it no longer drives rendering.)
+- **No zones, no rectangles, no cluster/dispersed branching.**
 - **Total GEX** = broad expiry universe; **0DTE GEX** = only options expiring the current trading day.
 - **Gamma Flip** = solve `NetGEX(S)=0` by repricing across hypothetical spot; render a **small neutral gray
   zone**, not a precise point, and not automatically S/R.
 - **Strength** = WEAK / MODERATE / STRONG / EXTREME, meaning structural dominance, **never** probability
   of reversal.
 - **Unit**: dollar GEX **per 1% move**, one consistent convention (e.g. "$1.82B GEX / 1%").
-- **Chart shows only**: the four structures (zone or line), core strike, $GEX/1%, strength rating, flip
-  zone, and a tiny `TOTAL: ± / 0DTE: ±` regime line. **Hide** raw IV, OI, per-strike greeks, Max Pain,
-  full chain, distance-to-level, dashboards.
+- **Chart shows only**: the four wall **lines**, each with its strike, $GEX/1%, and strength rating; the
+  neutral flip **line**; and a tiny `TOTAL: ± / 0DTE: ±` regime display. **Hide** raw IV, OI, per-strike
+  greeks, Max Pain, full chain, distance-to-level, dashboards. Example:
+  ```
+  ──────── CALL WALL       26,200   $3.35B / 1%   EXTREME ────────
+  ──── 0DTE CALL WALL      26,150   $1.20B / 1%   STRONG  ────
+                        TOTAL: NEGATIVE   0DTE: NEGATIVE
+  ······· GAMMA FLIP ·······  25,980   (neutral / gray)
+  ──── 0DTE PUT WALL       25,850   $0.92B / 1%   STRONG  ────
+  ──────── PUT WALL        25,800   $1.66B / 1%   EXTREME ────────
+  ```
 - **NDX→NQ**: `NQ Wall = NDX Wall + Basisₜ`, synchronized prices; NQ and MNQ share levels.
 - **Replay**: strict no-look-ahead — at a replay timestamp use only data known then.
 
 **Three reconciliations with what was measured (see `feed-quality.md`):**
 
-1. **"top-3 clustered → zone, else line" is a clean simplification of the §4.2 λ-cluster algorithm, and it
-   wins for a v1.** Keep the fuller λ=0.40 / volatility-normalized-gap growth as the internal engine, but
-   the top-3 rule is what the indicator surfaces. **The cluster/dispersed threshold must be floored at the
-   physical resolution limit ±S·σ·√T** — two strikes closer than that are not distinguishable structures
-   regardless of GEX, so "clustered" below the floor is automatic.
+1. **~~top-3 clustered → zone~~ — SUPERSEDED by the no-zones simplification.** There is no zone and no
+   cluster/dispersed decision. Each wall is the single max-|GEX| strike, rendered as a line. The ±S·σ·√T
+   resolution limit no longer gates a zone width, but it still bounds *confidence*: if the #1 and #2 strikes
+   are within ±S·σ·√T and their |GEX| is near-equal, the winning strike is not meaningfully distinguishable
+   from its neighbour, which should **lower the strength/confidence rating** rather than change the line.
+   The fuller λ=0.40 cluster algorithm is retired from the render path (may remain an internal diagnostic).
 
 2. **The user lists "option gamma, or inputs needed to calculate gamma."** Measurement forces the second
    branch for NDX: **feed gamma is quantized to ~14 distinct values across 142 near-money NDX strikes (C8)**,
@@ -356,7 +379,8 @@ three places it meets a measured constraint.
    **fitted surface so gamma is computed not read (C8)**, quality flags, versioning. *Hard prerequisite for
    NDX; not optional.*
 3. **GEX engine** — greeks from the surface, sign scenarios, total/0DTE net + gross, gamma-by-strike,
-   **top-3 → zone-or-line** rule with the ±S·σ·√T floor, flip zone via `NetGEX(S)=0`.
+   **single-line-per-wall** (max-|GEX| strike for each of Call / Put / 0DTE Call / 0DTE Put; no zones),
+   flip line via `NetGEX(S)=0`. ±S·σ·√T feeds the strength/confidence rating, not a zone width.
 4. **Mapping engine** — `Basisₜ` from Yahoo `NQ=F` **minus parity-implied index anchor (C9)**. Must add:
    specific-contract resolution (not continuous front-month), quarterly-roll handling, timestamp
    synchronization, basis outlier filter, theoretical `F ≈ S·exp[(r−q)τ]` fallback for staleness (§9.1).
