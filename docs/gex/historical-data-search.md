@@ -6,12 +6,18 @@ rather than only capture-forward?
 
 Every entry below was probed live, not assumed. Verdict first, evidence after.
 
-## Verdict
+## Verdict (updated — a free by-date source WAS found)
 
-**No free source provides historical *intraday* options chains for QQQ/NDX.** One free source
-(DoltHub) provides historical *daily EOD* chains with greeks, but for SPY and single names — not the
-index/ETF being traded, and not intraday. **Capture-forward remains the only path to the intraday,
-QQQ/NDX, replay-correct history the indicator needs.**
+**`marketdata.app` provides historical option chains by date on a Free Forever tier** (100 chains/day, 1
+year back, OI + IV + greeks). This makes the "click any past date, see that day's GEX" requirement
+achievable for free — with two limits: the historical chain is **end-of-day** (levels static within a
+replayed session, no intraday migration), and historical greeks may be **null** so gamma likely must be
+recomputed from the historical IV. A **free email-signup API key** is required (an agent cannot
+self-provision it), and QQQ/NDX/SPX coverage must be confirmed with that key. See the starred section.
+
+**No free source provides historical _intraday_ options chains for QQQ/NDX** — that remains paid-only
+(CBOE DataShop / Polygon / OptionsDX) or capture-forward. DoltHub, the only other free historical DB, is
+daily EOD, lacks QQQ/NDX/SPX, and has no open-interest column.
 
 ## What each source actually returned
 
@@ -52,7 +58,50 @@ Query note for any future use: the table is PK-ordered on `date` first, so `WHER
 (optionally + `act_symbol`) is fast; a bare `WHERE act_symbol='QQQ'` scans the whole table and times
 out against the API's ~30s limit.
 
-## The one remaining untested lead
+## ⭐ marketdata.app — the real find (historical chains by date, free tier)
+
+`https://api.marketdata.app/v1/options/chain/{SYMBOL}/?date=YYYY-MM-DD` — verified against the live docs.
+
+**Why this is the one that fits the "click any past date" requirement:**
+- Accepts a **`date=` parameter** and returns a **full historical chain for any past trading day** — this
+  is exactly the shape needed for arbitrary-date replay, which nothing else free offered.
+- Returns **`openInterest`, `iv`, and full greeks** (`gamma`, `delta`, `theta`, `vega`) per contract, plus
+  `underlyingPrice`, bid/ask, volume, OSI `optionSymbol`. That is the complete GEX input set — no IV
+  surface engine strictly required to get gamma, same as the CBOE live feed.
+- OSI symbol + strike format matches the CBOE parser already written.
+
+**Free-tier terms (from the pricing page):**
+
+| | Free Forever | Starter $30/mo | Trader $75/mo |
+|---|---|---|---|
+| Daily API credits | **100/day** | 10,000 | 100,000 |
+| Historical depth | **1 year** | 5 years | unlimited |
+| Options delay | **24h delayed** | 15 min | real-time |
+| Historical option chains | ✅ (within 1yr) | ✅ 5yr | ✅ unlimited |
+
+A full chain for one ticker/date = **1 credit** (cached-snapshot pricing). So **100 replay-days per day**
+on the free tier — ample for practice. 30-day free trial of a paid tier also available, no card required.
+
+**TWO CAVEATS measured from the docs (not yet failure-tested against a live key):**
+
+1. **Historical greeks may be null.** The docs state plainly: *"This is a current chain, so the Greek
+   columns are populated. A historical request (`date=`) returns null for all five."* If greeks are null on
+   `date=` requests, gamma must be **recomputed from the historical IV** (which the same row does carry) —
+   i.e. the IV→gamma path from C8 becomes mandatory for historical/replay, even for QQQ. This needs a live
+   key to confirm whether `iv` is also present on historical rows (docs imply the quote fields are).
+2. **Historical = end-of-day, not intraday.** The docs note *"One historical row does not carry one as-of
+   time"* — a `date=D` request returns the EOD chain for that day, one row per contract. So replay would
+   show **the same levels all session** for a given past day, not intraday migration. That is still a
+   massive improvement over "no past dates at all," and matches how most GEX practitioners use daily walls
+   — but it is EOD, not tick-by-tick.
+
+**Verdict:** this makes the user's core request — *click a random past date in replay, see that day's GEX
+levels* — **achievable on the free tier**, with two honest limits: levels are EOD-static within the day,
+and greeks likely need recomputing from IV. Requires a **free API key** (email signup; cannot be
+self-provisioned by an agent). This is the recommended backfill source. Coverage of **QQQ / NDX / SPX
+specifically must be confirmed** with a key — the docs use AAPL examples.
+
+## Other untested lead
 
 **Alpha Vantage `HISTORICAL_OPTIONS`** explicitly advertises historical options with greeks and rejects
 only the `demo` key. A real free key (25 req/day limit) would settle whether it (a) covers QQQ, (b) is
