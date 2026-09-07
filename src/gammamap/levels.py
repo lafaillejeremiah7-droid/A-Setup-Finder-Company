@@ -72,6 +72,13 @@ from .surface import SURFACE_MODEL_VERSION, forward_from_parity
 # ---------------------------------------------------------------------------
 LEVELS_SCHEMA_VERSION = "levels-1.0.0"
 
+# Emitted on every historical Kaggle level: those dates have NO synchronized NQ futures
+# quote, so the NDX->NQ basis (C2) cannot be measured. We map into QQQ/NDX-equivalent
+# INDEX space and set mnq_price=None rather than fabricate a basis (build-spec.md SS2.1;
+# FEAT-007 documented v1 limitation). A consumer that wants an MNQ price for a historical
+# date must supply a dated basis itself; we never invent one.
+BASIS_UNAVAILABLE_HISTORICAL = "basis_unavailable_no_synchronized_nq_quote"
+
 # The four wall lines the indicator draws (build-spec.md SS9a). (universe, side, label).
 _WALL_SPEC = (
     ("total", "call", "Call Wall"),
@@ -376,6 +383,181 @@ def build_levels(
         },
     }
     return levels
+
+
+def build_kaggle_levels(
+    chain: NormalizedChain,
+    quote_date: date,
+    *,
+    sign_model: SignModel = SignModel.DEALER_SHORT_GAMMA,
+) -> dict[str, Any]:
+    """Build a levels dict for one historical Kaggle QQQ EOD chain (FEAT-007 / build step 8).
+
+    This is the historical-replay counterpart to build_levels. It runs the SAME engine
+    (universes -> per-strike GEX -> walls -> flip -> regime) on a Kaggle-sourced
+    NormalizedChain, but differs from the live path in two spec-mandated ways:
+
+      * PROXY, always. The Kaggle CSV has no open-interest column, so GEX is built from the
+        VOLUME proxy (gex._oi_or_proxy falls back to volume when oi_available is False).
+        Every output carries proxy=True and the 'oi_absent_volume_proxy' flag and is never
+        presented as classic OI-GEX (C1 / build-spec.md SS2, FEAT-007).
+
+      * NO MNQ MAPPING. There is no synchronized NQ futures quote for a 2020-2022 date, so
+        the NDX->NQ basis (C2) cannot be measured. We refuse to fabricate one: walls and
+        the flip are emitted in the options' NATIVE QQQ index space (the 'native_level'
+        field), mnq_price is None, and BASIS_UNAVAILABLE_HISTORICAL is flagged. The parity
+        forward per the near expiry is still recorded as the honest index anchor. This is a
+        documented v1 limitation (FEAT-007 step 3, build-spec.md SS2.1).
+
+    `quote_date` is the EOD (16:00 ET) trading day the chain represents. asof is anchored
+    to 16:00 ET of that date. QQQ v1 uses the clean feed gamma (C8 applies to NDX only).
+    """
+    quality_flags: list[str] = list(chain.quality_flags)
+    # Historical dates have no synchronized futures quote -> no measurable basis (C2).
+    if BASIS_UNAVAILABLE_HISTORICAL not in quality_flags:
+        quality_flags.append(BASIS_UNAVAILABLE_HISTORICAL)
+
+    root = str(chain.provenance.get("root") or "QQQ")
+    feed_spot = chain.spot_from_feed or 0.0
+
+    # asof = 16:00 America/New_York on the quote date (the EOD point-in-time this chain is).
+    asof_dt = datetime(
+        quote_date.year, quote_date.month, quote_date.day, 16, 0, 0,
+        tzinfo=timezone(timedelta(hours=_et_offset_hours(quote_date))),
+    ).astimezone(timezone.utc)
+
+    # Universes (C7). For QQQ every listed contract that has not expired is live; the 0DTE
+    # universe is the contracts expiring ON the quote date.
+    total_contracts = select_total_universe(chain, quote_date)
+    dte_contracts = select_0dte_universe(chain, quote_date)
+
+    # Parity forward for the nearest still-relevant expiry: the honest index anchor for
+    # this date, recorded even though we cannot turn it into an MNQ basis.
+    anchor_forward: float | None = None
+    parity_r2: float | None = None
+    for yymmdd in _sorted_expiry_tokens(chain, root, quote_date):
+        fwd = forward_from_parity(chain, root, yymmdd)
+        if fwd.F == fwd.F and fwd.F > 0.0:  # finite + positive
+            anchor_forward = fwd.F
+            parity_r2 = fwd.r2
+            break
+
+    gamma_source = feed_gamma_source  # QQQ v1: clean feed gamma (C8 is NDX-only)
+    oi_available = is_true_gex(chain)  # False for Kaggle -> volume proxy
+
+    total_profile = compute_strike_gex(
+        total_contracts, spot=feed_spot, gamma_source=gamma_source,
+        oi_available=oi_available, universe="total", sign_model=sign_model,
+    )
+    dte_profile = compute_strike_gex(
+        dte_contracts, spot=feed_spot, gamma_source=gamma_source,
+        oi_available=oi_available, universe="0dte", sign_model=sign_model,
+    )
+    quality_flags.extend(f for f in total_profile.quality_flags if f not in quality_flags)
+    quality_flags.extend(f for f in dte_profile.quality_flags if f not in quality_flags)
+
+    profiles = {"total": total_profile, "0dte": dte_profile}
+    wall_levels: list[_WallLevel] = []
+    for universe, side, label in _WALL_SPEC:
+        profile = profiles[universe]
+        wall: Wall = select_wall(profile, side)
+        strength = assess_strength(profile, wall, side)
+        wall_levels.append(
+            _WallLevel(
+                label=label,
+                universe=universe,
+                side=side,
+                strike=wall.strike,
+                mnq_price=None,  # no synchronized NQ basis for historical dates (C2)
+                gex_per_1pct=round(wall.signed_gex, 2),
+                strength=strength.band.value,
+                confidence=strength.confidence,
+                global_share=round(strength.global_share, 6),
+            )
+        )
+
+    # Gamma flip in native QQQ space (no MNQ mapping): solve the root, keep it native.
+    flip_native = None
+    flip_others: list[float] = []
+    flip_neutral = True
+    if total_contracts and feed_spot > 0.0:
+        def gamma_at(contract, S):
+            return gamma_source(contract, S)
+
+        flip = solve_gamma_flip(
+            total_contracts, gamma_at=gamma_at, oi_available=oi_available,
+            grid_min=feed_spot * 0.90, grid_max=feed_spot * 1.10,
+            reference_spot=feed_spot, sign_model=sign_model,
+        )
+        if flip.flip is not None:
+            flip_native = round(flip.flip, 4)
+            flip_others = [round(r, 4) for r in flip.all_roots if r != flip.flip]
+            flip_neutral = False
+
+    regime = assess_regime(total_profile, dte_profile)
+
+    levels: dict[str, Any] = {
+        "schema_version": LEVELS_SCHEMA_VERSION,
+        "model_versions": {
+            "surface": SURFACE_MODEL_VERSION,
+            "gex": GEX_MODEL_VERSION,
+            "mapping": mapping.MAPPING_MODEL_VERSION,
+        },
+        "asof": asof_dt.isoformat(),
+        "quote_date": quote_date.isoformat(),
+        "instrument": root,
+        # Historical levels are emitted in the options' NATIVE index space, NOT MNQ: there
+        # is no synchronized NQ basis to map through (see BASIS_UNAVAILABLE_HISTORICAL).
+        "render_target": "QQQ_native",
+        "gex_unit": GEX_UNIT,
+        "walls": [
+            {
+                "label": w.label,
+                "universe": w.universe,
+                "side": w.side,
+                "native_level": w.strike,  # QQQ index strike; NOT mapped to MNQ
+                "mnq_price": w.mnq_price,   # always None for historical dates
+                "gex_per_1pct": w.gex_per_1pct,
+                "strength": w.strength,
+                "confidence": w.confidence,
+            }
+            for w in wall_levels
+        ],
+        "gamma_flip": {
+            "native_level": flip_native,  # QQQ index level; NOT mapped to MNQ
+            "mnq_price": None,
+            "neutral": flip_neutral,
+            "other_roots": flip_others,
+        },
+        "regime": {
+            "total_sign": regime.total_sign,
+            "zerodte_sign": regime.dte_sign,
+            "divergence": regime.divergence,
+        },
+        "provenance": {
+            "source": chain.provenance.get("source"),
+            "oi_available": oi_available,
+            # PROXY is always True here: GEX came from the volume proxy, never OI.
+            "proxy": not oi_available,
+            "quality_flags": sorted(set(quality_flags)),
+            "parity_forward": (round(anchor_forward, 4) if anchor_forward is not None else None),
+            "parity_r2": (round(parity_r2, 6) if parity_r2 is not None else None),
+            "feed_spot": (round(feed_spot, 4) if feed_spot else None),
+            # No NQ quote existed for this date; recorded explicitly rather than fabricated.
+            "nq_price": None,
+            "basis_parity": None,
+        },
+    }
+    return levels
+
+
+def kaggle_levels_path(root: Path | str, quote_date: date, instrument: str = "qqq") -> Path:
+    """Deterministic committed path for a historical Kaggle level: <root>/<date>_<inst>.json.
+
+    build-spec.md SS7: a historical level lands at a stable, sortable, diffable location.
+    Instrument is lowercased to match the FEAT-007 path convention (kaggle/<date>_qqq.json).
+    """
+    return Path(root) / f"{quote_date.isoformat()}_{instrument.lower()}.json"
 
 
 def _asof_trading_day(chain_asof: str | None, asof_dt: datetime) -> date:

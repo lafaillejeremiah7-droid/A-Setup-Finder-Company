@@ -18,3 +18,10 @@ venv/
 # interest and zero volume, verified to leave gross GEX unchanged to 1e-10. See
 # src/gammamap/distill.py.
 data/snapshots/**/chain_*.json.gz
+
+# Kaggle historical raw: the CC0 zip is ~132 MB and the CSV it contains is ~628 MB
+# uncommitted, far too large to version-control. scripts/backfill_kaggle.py downloads it
+# here and streams it; only the small distilled per-date levels files under
+# data/levels/kaggle/ are committed (same policy as the raw CBOE chains above).
+data/kaggle_raw/
+*.csv.gz.raw
