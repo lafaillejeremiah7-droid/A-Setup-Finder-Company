@@ -25,7 +25,7 @@
     "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && PYTHONPATH=src python -m pytest tests/test_mapping_levels.py -q"
   ],
   "type": "feat",
-  "status": "pending",
+  "status": "completed",
   "blocked_reason": null,
-  "findings": ""
+  "findings": "Implemented src/gammamap/mapping.py (basis/map_ndx_to_mnq/QQQ ratio path + direct alt, corrected_basis C9, raw_feed_basis, NQ continuous-front-month + skew flags) and src/gammamap/levels.py (build_levels -> adapters -> parity forward -> gex -> mapping, versioned dict, deterministic sorted-key write, no-look-ahead guard). Verified +42 basis reference exactly. C9 PROVEN on the committed QQQ snapshot: raw current_price basis 21.0957 vs corrected parity basis -15.7651 (parity R2 0.999961); both recorded. Committed real levels file data/levels/2026-09-06/230612Z_QQQ.json (Total Call Wall MNQ 30043.10, Put Wall 28807.80; regime total '-'/0dte '0'). IMPORTANT DEVIATION FROM NAIVE DEFAULT: build_levels defaults asof to meta.captured_at (not the option chain's own quote_timestamp), because the QQQ chain quote time (2026-09-04T15:59:59 ET) legitimately PRECEDES the live NQ/MNQ quote + capture time (2026-09-06T23:06:12Z); using the chain quote time as asof would (correctly) trip the no-look-ahead guard on the live futures quotes. Capture time is the honest replay anchor; trading day still comes from the chain's session date (Sep 4) so C7 0DTE selection is unchanged. Snapshot has no QQQ contracts expiring on the Sep-4 session date, so 0DTE walls are null with an honest 'gex_no_contracts' flag. All 56 tests pass (5 new mapping/levels test groups + existing suite)."
 }
