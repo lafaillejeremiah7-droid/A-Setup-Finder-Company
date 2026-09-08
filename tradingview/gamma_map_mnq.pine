@@ -2,17 +2,18 @@
 // =============================================================================
 // The Gamma Map -- MNQ  (TradingView Pine v6 renderer)
 //
-// A THIN RENDERER. It draws EXACTLY five horizontal lines plus one regime
+// A THIN RENDERER. It draws EXACTLY three horizontal lines plus one regime
 // readout and NOTHING else:
 //
-//     CALL WALL, 0DTE CALL WALL, GAMMA FLIP, 0DTE PUT WALL, PUT WALL
+//     CALL WALL, GAMMA FLIP, PUT WALL
 //     TOTAL: <sign>   0DTE: <sign>            (one regime readout)
 //
 // It does NOT compute GEX. All numbers come from the Python engine's
-// scripts/print_levels.py; the trader reads the five levels off that output and
-// types them into this indicator's Settings. TradingView Pine CANNOT fetch an
-// external file/URL (hard platform limit), so this manual-input bridge is the
-// intended, honest design -- there is no look-ahead and nothing is fabricated.
+// scripts/print_levels.py; the trader reads the three levels off that output
+// and types them into this indicator's Settings. TradingView Pine CANNOT fetch
+// an external file/URL (hard platform limit), so this manual-input bridge is
+// the intended, honest design -- there is no look-ahead and nothing is
+// fabricated.
 //
 // This is the TradingView equivalent of tradovate/gamma_map_indicator.js. The
 // label/format/skip rules below match tradovate/render_spec.json EXACTLY (the
@@ -56,11 +57,9 @@ COLOR_FLIP = color.new(color.gray, 0)
 // A price of 0 means "not present" -> that level is skipped (never drawn).
 // -----------------------------------------------------------------------------
 GRP_CW  = "1. CALL WALL (total universe)"
-GRP_0CW = "2. 0DTE CALL WALL"
-GRP_GF  = "3. GAMMA FLIP"
-GRP_0PW = "4. 0DTE PUT WALL"
-GRP_PW  = "5. PUT WALL (total universe)"
-GRP_REG = "6. Regime readout"
+GRP_GF  = "2. GAMMA FLIP"
+GRP_PW  = "3. PUT WALL (total universe)"
+GRP_REG = "4. Regime readout"
 
 TIP_PRICE    = "MNQ price for this level, from scripts/print_levels.py. Leave 0 to skip (no line drawn)."
 TIP_GEX      = "GEX-per-1% in RAW DOLLARS for this wall, e.g. 830000000 renders as $0.83B / 1%. From the engine's levels file."
@@ -71,25 +70,15 @@ cwPrice    = input.float(0.0, "Call Wall price",    group=GRP_CW, tooltip=TIP_PR
 cwGex      = input.float(0.0, "Call Wall GEX ($)",  group=GRP_CW, tooltip=TIP_GEX)
 cwStrength = input.string(S_STRONG, "Call Wall strength", options=[S_WEAK, S_MODERATE, S_STRONG, S_EXTREME], group=GRP_CW, tooltip=TIP_STRENGTH)
 
-// -- 2. 0DTE CALL WALL --
-zcwPrice    = input.float(0.0, "0DTE Call Wall price",    group=GRP_0CW, tooltip=TIP_PRICE)
-zcwGex      = input.float(0.0, "0DTE Call Wall GEX ($)",  group=GRP_0CW, tooltip=TIP_GEX)
-zcwStrength = input.string(S_MODERATE, "0DTE Call Wall strength", options=[S_WEAK, S_MODERATE, S_STRONG, S_EXTREME], group=GRP_0CW, tooltip=TIP_STRENGTH)
-
-// -- 3. GAMMA FLIP (no gex / no strength -- label is just "GAMMA FLIP   <price>") --
+// -- 2. GAMMA FLIP (no gex / no strength -- label is just "GAMMA FLIP   <price>") --
 gfPrice = input.float(0.0, "Gamma Flip price", group=GRP_GF, tooltip=TIP_PRICE)
 
-// -- 4. 0DTE PUT WALL --
-zpwPrice    = input.float(0.0, "0DTE Put Wall price",    group=GRP_0PW, tooltip=TIP_PRICE)
-zpwGex      = input.float(0.0, "0DTE Put Wall GEX ($)",  group=GRP_0PW, tooltip=TIP_GEX)
-zpwStrength = input.string(S_MODERATE, "0DTE Put Wall strength", options=[S_WEAK, S_MODERATE, S_STRONG, S_EXTREME], group=GRP_0PW, tooltip=TIP_STRENGTH)
-
-// -- 5. PUT WALL (total) --
+// -- 3. PUT WALL (total) --
 pwPrice    = input.float(0.0, "Put Wall price",    group=GRP_PW, tooltip=TIP_PRICE)
 pwGex      = input.float(0.0, "Put Wall GEX ($)",  group=GRP_PW, tooltip=TIP_GEX)
 pwStrength = input.string(S_STRONG, "Put Wall strength", options=[S_WEAK, S_MODERATE, S_STRONG, S_EXTREME], group=GRP_PW, tooltip=TIP_STRENGTH)
 
-// -- 6. Regime readout --
+// -- 4. Regime readout --
 TIP_SIGN  = "Regime sign for this bucket, from print_levels.py (TOTAL / 0DTE)."
 TIP_PROXY = "Tick ON when the levels came from a volume-proxy source (e.g. the Kaggle historical path). Appends '(proxy)'."
 totalSign = input.string(R_NEG, "TOTAL sign",  options=[R_POS, R_NEG, R_NEU], group=GRP_REG, tooltip=TIP_SIGN)
@@ -123,16 +112,12 @@ strengthWidth(string s) =>
 // DRAWING -- recompute on the last bar only; reuse & delete handles so drawings
 // never leak across bars. One line + one label per level. Skip when price == 0.
 // -----------------------------------------------------------------------------
-// Persistent handles for the five lines + five labels + regime label.
+// Persistent handles for the three lines + three labels + regime label.
 var line  cwLine  = na
-var line  zcwLine = na
 var line  gfLine  = na
-var line  zpwLine = na
 var line  pwLine  = na
 var label cwLbl   = na
-var label zcwLbl  = na
 var label gfLbl   = na
-var label zpwLbl  = na
 var label pwLbl   = na
 var label regLbl  = na
 
@@ -176,33 +161,23 @@ if barstate.islast
     // Clear prior drawings before recomputing.
     delLine(cwLine)
     delLbl(cwLbl)
-    delLine(zcwLine)
-    delLbl(zcwLbl)
     delLine(gfLine)
     delLbl(gfLbl)
-    delLine(zpwLine)
-    delLbl(zpwLbl)
     delLine(pwLine)
     delLbl(pwLbl)
     delLbl(regLbl)
 
     // Walls: calls drawn above (label below the line), puts below (label above).
-    [_cwLn,  _cwLb ] = drawWall(cwPrice,  wallLabel("CALL WALL",      cwPrice,  cwGex,  cwStrength),  COLOR_CALL, strengthWidth(cwStrength),  false)
-    [_zcwLn, _zcwLb] = drawWall(zcwPrice, wallLabel("0DTE CALL WALL", zcwPrice, zcwGex, zcwStrength), COLOR_CALL, strengthWidth(zcwStrength), false)
-    [_gfLn,  _gfLb ] = drawFlip(gfPrice)
-    [_zpwLn, _zpwLb] = drawWall(zpwPrice, wallLabel("0DTE PUT WALL",  zpwPrice, zpwGex, zpwStrength), COLOR_PUT,  strengthWidth(zpwStrength), true)
-    [_pwLn,  _pwLb ] = drawWall(pwPrice,  wallLabel("PUT WALL",       pwPrice,  pwGex,  pwStrength),  COLOR_PUT,  strengthWidth(pwStrength),  true)
+    [_cwLn, _cwLb] = drawWall(cwPrice, wallLabel("CALL WALL", cwPrice, cwGex, cwStrength), COLOR_CALL, strengthWidth(cwStrength), false)
+    [_gfLn, _gfLb] = drawFlip(gfPrice)
+    [_pwLn, _pwLb] = drawWall(pwPrice, wallLabel("PUT WALL",  pwPrice, pwGex, pwStrength), COLOR_PUT,  strengthWidth(pwStrength), true)
 
-    cwLine  := _cwLn
-    cwLbl   := _cwLb
-    zcwLine := _zcwLn
-    zcwLbl  := _zcwLb
-    gfLine  := _gfLn
-    gfLbl   := _gfLb
-    zpwLine := _zpwLn
-    zpwLbl  := _zpwLb
-    pwLine  := _pwLn
-    pwLbl   := _pwLb
+    cwLine := _cwLn
+    cwLbl  := _cwLb
+    gfLine := _gfLn
+    gfLbl  := _gfLb
+    pwLine := _pwLn
+    pwLbl  := _pwLb
 
     // Regime readout: a single label anchored at the right edge, bottom.
     regLbl := label.new(bar_index, low, regimeText(), xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_up, color=color.new(color.gray, 20), textcolor=color.white, size=size.normal)

@@ -1,31 +1,30 @@
 # The Gamma Map - TradingView (Pine v6) renderer
 
 `gamma_map_mnq.pine` is the **TradingView** equivalent of the Tradovate renderer
-(`tradovate/gamma_map_indicator.js`). It draws EXACTLY the five Gamma Map levels as
+(`tradovate/gamma_map_indicator.js`). It draws EXACTLY three Gamma Map levels as
 horizontal lines + labels on an `MNQ1!` chart, plus a one-line regime readout:
 
 ```
-CALL WALL       30,043   $0.83B / 1%   STRONG    (solid, greenish, above price)
-0DTE CALL WALL  30,010   $0.41B / 1%   MODERATE  (solid, greenish)
-GAMMA FLIP      29,875                            (gray, dotted -- label is price only)
-0DTE PUT WALL   29,720   $0.55B / 1%   MODERATE  (solid, reddish)
-PUT WALL        29,600   $1.12B / 1%   STRONG    (solid, reddish, below price)
+CALL WALL   30,043   $0.83B / 1%   STRONG    (solid, greenish, above price)
+GAMMA FLIP  29,875                            (gray, dotted -- label is price only)
+PUT WALL    29,600   $1.12B / 1%   STRONG    (solid, reddish, below price)
 
-TOTAL: NEGATIVE   0DTE: NEGATIVE                  (regime readout, bottom right)
+TOTAL: NEGATIVE   0DTE: NEGATIVE              (regime readout, bottom right)
 ```
 
 The label format, separators, sign words, and skip-on-null behavior match
 `tradovate/render_spec.json` exactly (the single source of truth shared with the Python
 contract test). This is a **thin renderer**: it does not compute GEX and draws nothing but
-these five levels + the regime line.
+these three levels + the regime line. The regime readout still shows BOTH the TOTAL and 0DTE
+signs (that is a regime summary, independent of which lines are drawn).
 
 ## Why you type the numbers in
 
 TradingView Pine **cannot fetch an external file or URL** (a hard platform limit).
 So the design is a deliberate, honest manual-input bridge:
 
-1. The Python engine computes the five levels for a point in time.
-2. You read them off `scripts/print_levels.py`.
+1. The Python engine computes the levels for a point in time.
+2. You read the three this indicator draws (Call Wall, Gamma Flip, Put Wall) off `scripts/print_levels.py`.
 3. You type them into this indicator's **Settings**.
 4. Pine draws the lines.
 
@@ -34,7 +33,7 @@ There is no look-ahead and nothing is fabricated: a level you leave at `0` is **
 
 ## Workflow
 
-### 1. Get the five numbers from the engine
+### 1. Get the numbers from the engine
 
 Set up the environment (the repo uses pyenv 3.11.15 and `PYTHONPATH=src`) and print a
 levels file:
@@ -48,8 +47,10 @@ export PYTHONPATH=src
 PYTHONPATH=src python scripts/print_levels.py data/levels/2026-09-06/230612Z_QQQ.json
 ```
 
-That prints the four walls (each with its MNQ price + strength band), the Gamma Flip price,
-and the TOTAL / 0DTE regime line. For the per-wall **GEX-per-1%** value (needed for the
+That prints the walls (each with its MNQ price + strength band), the Gamma Flip price,
+and the TOTAL / 0DTE regime line. This indicator draws the two total-universe walls (Call
+Wall and Put Wall), the Gamma Flip, and the regime readout. For the per-wall
+**GEX-per-1%** value (needed for the
 `$X.XXB / 1%` part of the label) read the `gex_per_1pct` field from the same levels JSON,
 entered in raw dollars (e.g. `830000000` renders as `$0.83B / 1%`).
 
@@ -64,8 +65,8 @@ entered in raw dollars (e.g. `830000000` renders as `$0.83B / 1%`).
 
 Open the indicator's **Settings** and fill in, per group:
 
-- **Prices** (Call Wall, 0DTE Call Wall, Gamma Flip, 0DTE Put Wall, Put Wall): the MNQ
-  prices from `print_levels.py`. Leave any level at `0` to skip it.
+- **Prices** (Call Wall, Gamma Flip, Put Wall): the MNQ prices from `print_levels.py`.
+  Leave any level at `0` to skip it.
 - **GEX ($)** for each wall: the raw-dollar `gex_per_1pct` (e.g. `830000000`). The Gamma
   Flip has no GEX/strength; its label is just `GAMMA FLIP   <price>`.
 - **Strength** dropdown for each wall (`WEAK` / `MODERATE` / `STRONG` / `EXTREME`). This maps
@@ -103,7 +104,7 @@ level at `0` to skip it.)
 
 ## Scope
 
-Like the Tradovate renderer, this indicator draws ONLY the five levels + the regime readout.
-It does not draw OI, IV, per-strike greeks, Max Pain, the full chain, distance-to-level,
-order flow, or volume profiles. Those are computed upstream (the Python engine) or added
-manually by the trader. That scope boundary is a hard rule, not a default.
+This indicator draws ONLY three levels (Call Wall, Gamma Flip, Put Wall) + the regime readout.
+It does not draw the 0DTE walls, OI, IV, per-strike greeks, Max Pain, the full chain,
+distance-to-level, order flow, or volume profiles. Those are computed upstream (the Python
+engine) or added manually by the trader. That scope boundary is a hard rule, not a default.
