@@ -1,0 +1,19 @@
+{
+  "name": "mnq-gex-bot-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live GEX wall mapper and minimal MNQ dashboard",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1"
+  }
+}
