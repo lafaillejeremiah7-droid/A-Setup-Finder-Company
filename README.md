@@ -11,10 +11,14 @@ It also shows the current total gamma regime, modeled $GEX per 1% move, wall con
 ## Core logic
 
 ### Call Wall
-The single call-side strike with the largest absolute modeled/published GEX magnitude.
+If the provider already publishes a Call Wall, the bot uses that exact published wall and maps it into MNQ price space.
+
+If the provider only supplies call-side strike GEX values, the fallback rule is the single call-side strike with the largest absolute GEX magnitude.
 
 ### Put Wall
-The single put-side strike with the largest absolute modeled/published GEX magnitude.
+If the provider already publishes a Put Wall, the bot uses that exact published wall and maps it into MNQ price space.
+
+If the provider only supplies put-side strike GEX values, the fallback rule is the single put-side strike with the largest absolute GEX magnitude.
 
 ### Gamma Flip
 The source/model's Net-GEX zero crossing. It is mapped to MNQ like the wall levels.
@@ -27,16 +31,18 @@ The source/model's Net-GEX zero crossing. It is mapped to MNQ like the wall leve
 Positive/negative gamma is structural context, not an automatic trade signal.
 
 ### Strength
-`WEAK / MODERATE / STRONG / EXTREME` currently measures how dominant the strongest wall is relative to total absolute same-side GEX in the supplied level set. It is **not** a rejection probability.
+When the provider publishes a wall-strength/concentration label, the bot preserves it.
 
-Default concentration thresholds:
+When strength must be derived from supplied strike-level GEX, `WEAK / MODERATE / STRONG / EXTREME` measures how dominant the strongest wall is relative to total absolute same-side GEX in the supplied level set. It is **not** a rejection probability.
+
+Default fallback concentration thresholds:
 
 - EXTREME: strongest wall >= 35% of same-side absolute GEX
 - STRONG: >= 22%
 - MODERATE: >= 12%
 - WEAK: below 12%
 
-These are engineering defaults and should be validated against your historical data before treating them as meaningful trading categories.
+These are engineering defaults and should be validated against historical data before treating them as meaningful trading categories.
 
 ## NDX → MNQ mapping
 
@@ -63,7 +69,35 @@ QQQ is also supported if the payload includes both QQQ and NDX prices. The engin
 
 ## Live provider payload
 
-The bot is deliberately provider-agnostic. Point `GEX_SOURCE_URL` at your live endpoint. The endpoint should return JSON like:
+The bot is deliberately provider-agnostic. Point `GEX_SOURCE_URL` at your live endpoint.
+
+### Preferred: provider already publishes the walls
+
+```json
+{
+  "timestamp": "2026-09-07T14:30:00Z",
+  "sourceUnderlying": "NDX",
+  "sourcePrice": 25000.0,
+  "mnqPrice": 25042.25,
+  "netGex": -2850000000,
+  "gammaFlip": 25035.0,
+  "gexUnit": "USD_PER_1PCT_MOVE",
+  "callWall": {
+    "strike": 25200,
+    "gex": -1780000000,
+    "strength": "EXTREME"
+  },
+  "putWall": {
+    "strike": 24900,
+    "gex": 1460000000,
+    "strength": "STRONG"
+  }
+}
+```
+
+`callWall` and `putWall` can also be plain numbers if the source only publishes the wall price. Optional `callWallGex`, `putWallGex`, `callWallStrength`, and `putWallStrength` fields can supply the missing metadata.
+
+### Fallback: provider supplies strike-level GEX only
 
 ```json
 {
@@ -96,7 +130,7 @@ For QQQ sources also include:
 }
 ```
 
-If your actual provider uses different field names, edit only `src/providers/genericProvider.js` or add a dedicated provider adapter. Keep the GEX engine independent from provider-specific details.
+If the actual provider uses different field names, edit only `src/providers/genericProvider.js` or add a dedicated provider adapter. Keep the mapping/GEX engine independent from provider-specific details.
 
 ## Run locally
 
@@ -141,13 +175,15 @@ Compact output intended for a chart/indicator bridge:
     "strike": 25200,
     "gex": -1780000000,
     "mnqLevel": 25242.25,
-    "strength": "EXTREME"
+    "strength": "EXTREME",
+    "source": "PUBLISHED_WALL"
   },
   "putWall": {
     "strike": 24900,
     "gex": 1460000000,
     "mnqLevel": 24942.25,
-    "strength": "STRONG"
+    "strength": "STRONG",
+    "source": "PUBLISHED_WALL"
   },
   "gammaFlip": {
     "sourceLevel": 25035,
