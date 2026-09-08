@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 function money(value) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return "—";
   const abs = Math.abs(n);
@@ -12,6 +13,7 @@ function money(value) {
 }
 
 function price(value) {
+  if (value === null || value === undefined || value === "") return "—";
   const n = Number(value);
   return Number.isFinite(n) ? n.toFixed(2) : "—";
 }
@@ -25,7 +27,7 @@ function setStatus(ok, stale, text) {
 function placeLine(id, value, min, max) {
   const el = $(id);
   const n = Number(value);
-  if (!Number.isFinite(n) || max <= min) {
+  if (value === null || value === undefined || !Number.isFinite(n) || max <= min) {
     el.style.display = "none";
     return;
   }
@@ -41,7 +43,7 @@ function renderMap(data) {
     data.putWall?.mnqLevel,
     data.gammaFlip?.mnqLevel,
     data.mnqPrice,
-  ].map(Number).filter(Number.isFinite);
+  ].filter((value) => value !== null && value !== undefined).map(Number).filter(Number.isFinite);
 
   if (values.length < 2) return;
   const rawMin = Math.min(...values);
@@ -55,6 +57,13 @@ function renderMap(data) {
   placeLine("priceLine", data.mnqPrice, min, max);
   placeLine("flipLine", data.gammaFlip?.mnqLevel, min, max);
   placeLine("putLine", data.putWall?.mnqLevel, min, max);
+}
+
+function wallMeta(wall) {
+  if (!wall) return "—";
+  const gex = money(wall.gex);
+  const gexPart = gex === "—" ? "GEX unavailable" : `${gex} GEX / 1%`;
+  return `${gexPart} · source strike ${price(wall.strike)}`;
 }
 
 function render(payload) {
@@ -75,11 +84,11 @@ function render(payload) {
   $("freshness").textContent = ageMs == null ? "—" : `${Math.round(ageMs / 1000)}s since refresh`;
 
   $("callLevel").textContent = price(data.callWall?.mnqLevel);
-  $("callGex").textContent = `${money(data.callWall?.gex)} GEX / 1% · source strike ${price(data.callWall?.strike)}`;
+  $("callGex").textContent = wallMeta(data.callWall);
   $("callStrength").textContent = data.callWall?.strength || "—";
 
   $("putLevel").textContent = price(data.putWall?.mnqLevel);
-  $("putGex").textContent = `${money(data.putWall?.gex)} GEX / 1% · source strike ${price(data.putWall?.strike)}`;
+  $("putGex").textContent = wallMeta(data.putWall);
   $("putStrength").textContent = data.putWall?.strength || "—";
 
   $("flipLevel").textContent = price(data.gammaFlip?.mnqLevel);
