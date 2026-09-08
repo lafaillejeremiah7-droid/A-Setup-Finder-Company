@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MNQ GEX Map</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">LIVE STRUCTURAL MAP</p>
+        <h1>MNQ GEX Dashboard</h1>
+      </div>
+      <div class="status-wrap">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </header>
+
+    <section class="summary-grid">
+      <article class="card regime-card">
+        <span class="label">Gamma Regime</span>
+        <strong id="regime" class="regime">—</strong>
+        <span id="netGex" class="subvalue">Net GEX —</span>
+      </article>
+
+      <article class="card">
+        <span class="label">MNQ</span>
+        <strong id="mnqPrice" class="value">—</strong>
+        <span id="basis" class="subvalue">Basis —</span>
+      </article>
+
+      <article class="card">
+        <span class="label">Source</span>
+        <strong id="source" class="value">—</strong>
+        <span id="freshness" class="subvalue">Waiting for data</span>
+      </article>
+    </section>
+
+    <section class="levels">
+      <article class="level-card call">
+        <div class="level-head">
+          <span class="level-name">CALL WALL</span>
+          <span id="callStrength" class="strength">—</span>
+        </div>
+        <div id="callLevel" class="level-price">—</div>
+        <div id="callGex" class="level-meta">—</div>
+      </article>
+
+      <article class="level-card flip">
+        <div class="level-head">
+          <span class="level-name">GAMMA FLIP</span>
+        </div>
+        <div id="flipLevel" class="level-price">—</div>
+        <div class="level-meta">Modeled Net GEX zero-crossing mapped to MNQ</div>
+      </article>
+
+      <article class="level-card put">
+        <div class="level-head">
+          <span class="level-name">PUT WALL</span>
+          <span id="putStrength" class="strength">—</span>
+        </div>
+        <div id="putLevel" class="level-price">—</div>
+        <div id="putGex" class="level-meta">—</div>
+      </article>
+    </section>
+
+    <section class="price-map card">
+      <div class="section-title">
+        <div>
+          <span class="label">MNQ PRICE MAP</span>
+          <h2>Three lines only</h2>
+        </div>
+        <span id="mapRange" class="subvalue">—</span>
+      </div>
+      <div id="ladder" class="ladder">
+        <div id="callLine" class="map-line map-call"><span>CALL WALL</span><b></b></div>
+        <div id="priceLine" class="map-line map-price"><span>MNQ</span><b></b></div>
+        <div id="flipLine" class="map-line map-flip"><span>GAMMA FLIP</span><b></b></div>
+        <div id="putLine" class="map-line map-put"><span>PUT WALL</span><b></b></div>
+      </div>
+    </section>
+
+    <footer>
+      <span>Structural context only. No zones. No automated trade signal.</span>
+      <span id="timestamp">—</span>
+    </footer>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
