@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.1.0",
+  "captured_at": "2026-09-06T23:06:12+00:00",
+  "chains": {
+    "_NDX": {
+      "symbol": "_NDX",
+      "retrieved_at": "2026-09-06T23:06:12+00:00",
+      "feed_timestamp": "2026-09-06 23:05:19",
+      "quote_timestamp": "2026-09-04T16:14:59",
+      "spot": 29544.1543,
+      "contract_count": 13692,
+      "raw_file": "chain_ndx.json.gz",
+      "oi_freshness": "previous_settlement_unknown_date",
+      "expiry_contract_counts": {
+        "260908": 764,
+        "260909": 744,
+        "260910": 672,
+        "260911": 400,
+        "260914": 358,
+        "260915": 362,
+        "260916": 362,
+        "260917": 362,
+        "260918": 1002,
+        "260921": 354,
+        "260922": 356,
+        "260923": 342,
+        "260924": 318,
+        "260925": 260,
+        "260928": 212,
+        "260929": 212,
+        "260930": 366,
+        "261001": 212,
+        "261002": 236,
+        "261005": 210,
+        "261006": 210,
+        "261007": 210,
+        "261008": 206,
+        "261009": 240,
+        "261014": 42,
+        "261016": 786,
+        "261023": 160,
+        "261030": 184,
+        "261120": 542,
+        "261130": 146,
+        "261218": 558,
+        "261231": 208,
+        "270115": 220,
+        "270219": 198,
+        "270319": 226,
+        "270331": 42,
+        "270416": 170,
+        "270521": 138,
+        "270617": 236,
+        "270630": 42,
+        "270716": 44,
+        "270917": 192,
+        "271217": 330,
+        "281215": 128,
+        "291221": 130
+      }
+    },
+    "QQQ": {
+      "symbol": "QQQ",
+      "retrieved_at": "2026-09-06T23:06:12+00:00",
+      "feed_timestamp": "2026-09-06 13:57:18",
+      "quote_timestamp": "2026-09-04T15:59:59",
+      "spot": 717.5,
+      "contract_count": 10384,
+      "raw_file": "chain_qqq.json.gz",
+      "oi_freshness": "previous_settlement_unknown_date",
+      "expiry_contract_counts": {
+        "260908": 394,
+        "260909": 394,
+        "260910": 394,
+        "260911": 424,
+        "260914": 140,
+        "260915": 136,
+        "260916": 134,
+        "260917": 60,
+        "260918": 534,
+        "260925": 346,
+        "260930": 564,
+        "261002": 332,
+        "261009": 332,
+        "261016": 476,
+        "261023": 332,
+        "261030": 372,
+        "261120": 296,
+        "261130": 350,
+        "261218": 504,
+        "261231": 222,
+        "270115": 354,
+        "270219": 296,
+        "270319": 334,
+        "270331": 322,
+        "270617": 366,
+        "270630": 194,
+        "270917": 334,
+        "271217": 366,
+        "280121": 334,
+        "280616": 414,
+        "281215": 334
+      }
+    }
+  },
+  "quotes": {
+    "NQ=F": {
+      "symbol": "NQ=F",
+      "retrieved_at": "2026-09-06T23:06:12+00:00",
+      "price": 29565.25,
+      "currency": "USD",
+      "exchange": "CME",
+      "is_continuous_series": true
+    },
+    "MNQ=F": {
+      "symbol": "MNQ=F",
+      "retrieved_at": "2026-09-06T23:06:12+00:00",
+      "price": 29565.25,
+      "currency": "USD",
+      "exchange": "CME",
+      "is_continuous_series": true
+    },
+    "^NDX": {
+      "symbol": "^NDX",
+      "retrieved_at": "2026-09-06T23:06:12+00:00",
+      "price": 29544.154,
+      "currency": "USD",
+      "exchange": "NIM",
+      "is_continuous_series": false
+    }
+  },
+  "distilled": {
+    "_NDX": {
+      "greeks_file": "greeks_ndx.csv.gz",
+      "oi_file": "oi/ndx_e92169562968.csv.gz",
+      "oi_digest": "e92169562968",
+      "rows_in": 13692,
+      "rows_kept": 5851,
+      "rows_dropped_no_exposure": 7841,
+      "rows_unparsed": 0,
+      "dropped_oi_total": 0,
+      "dropped_volume_total": 0,
+      "lossless_for_gex": true,
+      "roots": {
+        "NDX": 2568,
+        "NDXP": 3283
+      },
+      "duplicate_keys": 0
+    },
+    "QQQ": {
+      "greeks_file": "greeks_qqq.csv.gz",
+      "oi_file": "oi/qqq_630274c94f19.csv.gz",
+      "oi_digest": "630274c94f19",
+      "rows_in": 10384,
+      "rows_kept": 7943,
+      "rows_dropped_no_exposure": 2441,
+      "rows_unparsed": 0,
+      "dropped_oi_total": 0,
+      "dropped_volume_total": 0,
+      "lossless_for_gex": true,
+      "roots": {
+        "QQQ": 7943
+      },
+      "duplicate_keys": 0
+    }
+  },
+  "derived": {
+    "ndx_spot": 29544.1543,
+    "qqq_spot": 717.5,
+    "nq_price": 29565.25,
+    "mnq_price": 29565.25,
+    "basis": 21.0957,
+    "qqq_ndx_ratio": 0.02428568415647626,
+    "nq_mnq_divergence": 0.0,
+    "source_skew_seconds": 0.0,
+    "quality_flags": [
+      "nq_quote_is_continuous_front_month"
+    ]
+  },
+  "errors": {},
+  "notes": {
+    "mapping": "NDX strike --(+basis)--> NQ --(1:1)--> MNQ. Output renders on MNQ.",
+    "primary_instrument": "_NDX",
+    "secondary_instrument": "QQQ (cross-check only; never blended -- see finding 8)"
+  }
+}

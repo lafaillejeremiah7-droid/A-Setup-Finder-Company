@@ -1,0 +1,19 @@
+# Dev/test dependencies for The Gamma Map engine.
+#
+# WHY these three and nothing else:
+#   numpy  -- vectorised GEX / IV-surface math; the engine is stdlib-first but the
+#             numeric core (gamma-from-IV, surface fit) needs array ops.
+#   scipy  -- Black-Scholes / implied-vol root-finding and interpolation for the
+#             NDX IV-surface engine (C8: NDX feed gamma is quantised, must be recomputed).
+#   pytest -- the build gate. There is no packaging step, so the test suite IS the build.
+#
+# Deliberately NOT pinned to exact versions: numpy 2.4.6 and scipy 1.17.1 install
+# cleanly from PyPI and are the verified baseline, but the engine uses only stable
+# stdlib-adjacent APIs, so we allow patch/minor upgrades.
+#
+# Deliberately NOT here: pandas. The Kaggle historical loader MAY optionally use it,
+# but the core engine stays stdlib + numpy + scipy (matching the existing
+# stdlib-first style in src/gammamap). Do not make pandas a hard requirement.
+numpy
+scipy
+pytest

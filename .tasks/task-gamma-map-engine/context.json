@@ -1,0 +1,27 @@
+{
+  "project_type": "Python stdlib+scientific data pipeline (options GEX indicator engine) with a Tradovate JavaScript renderer as the final artifact",
+  "language": "Python 3.11 (engine + tests); JavaScript (Tradovate custom indicator, thin renderer)",
+  "build_system": "no build step; pyenv-managed Python. There is no packaging yet (no pyproject/setup). Modules live under src/gammamap and are imported via a path insert or `PYTHONPATH=src`. Tests are the build gate.",
+  "test_framework": "pytest (v9.1.1, available via pyenv). No tests exist yet; create tests/ at repo root. Use PYTHONPATH=src so `import gammamap...` resolves.",
+  "build_command": "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && python -c \"import gammamap\" (with PYTHONPATH=src)",
+  "test_command": "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && PYTHONPATH=src python -m pytest tests/ -q",
+  "verification_instructions": "1) Ensure pyenv env is exported IN THE SAME bash call (env does not persist across calls; /tmp does not persist across calls). 2) Install deps in the same call: pip install numpy scipy. 3) Run PYTHONPATH=src python -m pytest tests/ -q. 4) For the round-trip GEX check, recompute gross GEX from the committed distilled files and compare to a reference. 5) The existing capture snapshot at data/snapshots/2026-09-06/230612Z is the canonical live-format fixture for tests (QQQ spot 717.5, NDX current_price 29544.1543, basis 21.0957, NQ=MNQ=29565.25).",
+  "snapshot_or_generated_files": "Distilled snapshots under data/snapshots/<date>/<time>/greeks_*.csv.gz + data/snapshots/oi/*.csv.gz + meta.json + index.jsonl ARE committed and are produced by scripts/capture_snapshot.py (already built). Raw chain_*.json.gz are gitignored. New: levels files (JSON) written by the levels writer should be committed for the sample dates; the 628MB Kaggle raw CSV must be gitignored, only distilled per-date levels committed.",
+  "setup_instructions": "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && pip install numpy scipy pytest. numpy 2.4.6 and scipy 1.17.1 install cleanly from PyPI (OPEN_INTERNET). Everything MUST be done inside a single bash invocation because env exports and /tmp do NOT persist between invocations; data written under the repo path DOES persist.",
+  "environment_constraints": "Network: OPEN_INTERNET (PyPI, CBOE cdn, Yahoo, Kaggle all reachable). CRITICAL sandbox quirk: each bash invocation is a FRESH container -- /tmp is wiped and env exports do not carry over between calls, so combine download+process into one command and re-export pyenv every call. Work on branch nuke_root; do NOT create branches. Cannot push or open PRs (orchestrator does that). No secrets: CBOE live and Kaggle CC0 need no auth; any future key must come from an env var, never hardcoded.",
+  "contribution_requirements": "Follow the existing code style in src/gammamap: stdlib-first, dataclasses, extensive WHY-comments citing paper sections and findings corrections (C1-C9), quality flags emitted (never silently fixed). Reuse capture.py/distill.py/sources.py -- do NOT rebuild the capture layer (build-order step 1 is DONE). Commit in logical steps with clear messages on nuke_root. distilled SCHEMA_VERSION is currently 1.1.0.",
+  "key_patterns": "distill.py already splits NDX (AM-settled) vs NDXP (PM-settled dailies) and keys contracts on (root,expiry,type,strike) -- the mandatory join key (C7). GEX = s*Gamma*OI*M*S^2*0.01 = $ per 1% move. NDX feed gamma is quantized to ~14 values (C8) so NDX gamma MUST be computed from IV via a fitted surface; QQQ raw feed gamma (0.2% of peak) is clean enough for v1. current_price disagrees with parity forward (C9: NDX -46pts) so forward per expiry MUST come from put-call parity, and basis = NQ - (parity-implied index anchor), NOT NQ - current_price. Basis mapping: NDX strike +basis -> NQ -> (1:1) MNQ. Verified reference: NDX 24200/NQ 24242 -> basis +42; zone 24250-24350 NDX -> 24292-24392 NQ.",
+  "relevant_files": [
+    "docs/gex/build-spec.md (THE spec: SS0 scope, SS2 formulas, SS3 wall selection, SS4 strength, SS5 flip, SS9a user render rules, SS10 build order)",
+    "docs/gex/findings-so-far.md (corrections C1-C9; each verified)",
+    "docs/gex/feed-quality.md (C8/C9 measurement study; verified reference numbers)",
+    "docs/gex/historical-data-search.md (data-source survey and verdicts)",
+    "src/gammamap/sources.py (CBOE + Yahoo fetchers -- REUSE)",
+    "src/gammamap/distill.py (durable distilled storage, NDX/NDXP split, OSI parse -- REUSE)",
+    "src/gammamap/capture.py (snapshot job, Derived basis -- basis calc must be FIXED for C9)",
+    "scripts/capture_snapshot.py (CLI entry -- REUSE)",
+    "data/snapshots/2026-09-06/230612Z/meta.json (canonical live fixture)",
+    "data/snapshots/2026-09-06/230612Z/greeks_qqq.csv.gz + greeks_ndx.csv.gz + oi/*.csv.gz (committed distilled data for tests)"
+  ],
+  "directory_structure": "src/gammamap/ = engine package (capture layer done; add source-abstraction, surface, gex, mapping, levels modules here). scripts/ = CLI entry points. docs/gex/ = authoritative spec+findings. data/snapshots/ = committed distilled captures + oi/ content-addressed OI + index.jsonl. tests/ = to be created at repo root. Tradovate JS indicator + levels-file consumer to be added under a new dir (e.g. tradovate/ or indicator/)."
+}

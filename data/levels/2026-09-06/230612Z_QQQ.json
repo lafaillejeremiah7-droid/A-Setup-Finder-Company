@@ -1,0 +1,78 @@
+{
+  "asof": "2026-09-06T23:06:12+00:00",
+  "gamma_flip": {
+    "mnq_price": 29634.6692,
+    "neutral": false,
+    "other_roots": []
+  },
+  "gex_unit": "usd_delta_per_1pct_move",
+  "instrument": "QQQ",
+  "model_versions": {
+    "gex": "gex-1.0.0",
+    "mapping": "mapping-1.0.0",
+    "surface": "surface-1.0.0"
+  },
+  "provenance": {
+    "basis_parity": -15.7651,
+    "basis_parity_anchor": "parity_forward",
+    "basis_parity_r2": 0.999961,
+    "basis_raw": 21.0957,
+    "basis_raw_anchor": "feed_current_price",
+    "nq_price": 29565.25,
+    "nq_quote_is_continuous_front_month": true,
+    "oi_available": true,
+    "proxy": false,
+    "qqq_ndx_ratio": 0.0242856842,
+    "quality_flags": [
+      "basis_corrected_vs_raw_disagreement_exceeds_max:36.8608",
+      "gex_no_contracts",
+      "nq_quote_is_continuous_front_month"
+    ],
+    "source": "cboe_delayed"
+  },
+  "regime": {
+    "divergence": false,
+    "total_sign": "-",
+    "zerodte_sign": "0"
+  },
+  "render_target": "MNQ",
+  "schema_version": "levels-1.0.0",
+  "walls": [
+    {
+      "confidence": "high",
+      "gex_per_1pct": 833359502.83,
+      "label": "Call Wall",
+      "mnq_price": 30043.0957,
+      "side": "call",
+      "strength": "MODERATE",
+      "universe": "total"
+    },
+    {
+      "confidence": "high",
+      "gex_per_1pct": -1399189590.25,
+      "label": "Put Wall",
+      "mnq_price": 28807.8001,
+      "side": "put",
+      "strength": "MODERATE",
+      "universe": "total"
+    },
+    {
+      "confidence": "high",
+      "gex_per_1pct": 0.0,
+      "label": "0DTE Call Wall",
+      "mnq_price": null,
+      "side": "call",
+      "strength": "WEAK",
+      "universe": "0dte"
+    },
+    {
+      "confidence": "high",
+      "gex_per_1pct": 0.0,
+      "label": "0DTE Put Wall",
+      "mnq_price": null,
+      "side": "put",
+      "strength": "WEAK",
+      "universe": "0dte"
+    }
+  ]
+}

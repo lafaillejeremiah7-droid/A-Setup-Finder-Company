@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "IV-surface engine (build-order step 3). Provides two things every downstream stage needs: (a) the per-expiry forward from put-call parity (C9 -- NOT current_price, which is wrong by -46 NDX pts), and (b) gamma computed from IV via a fitted surface so NDX gamma is usable (C8 -- feed gamma is quantized to ~14 values). Includes quote filtering, exact time-to-expiry clocks (AM vs PM settlement per C7), per-strike IV, no-arb sanity checks, and versioning. QQQ v1 may bypass surface-gamma (raw feed gamma is clean) but STILL needs the parity forward for C9/basis. NDX/NDXP v2 requires surface gamma.",
+  "status": "completed",
+  "steps": [
+    "Create src/gammamap/surface.py. Implement Black-Scholes gamma Gamma = phi(d1)/(S*sigma*sqrt(T)) with d1 = [ln(S/K)+(r-q+sigma^2/2)T]/(sigma*sqrt(T)); use S=forward-consistent spot. Reference the verified formulas in build-spec.md SS2. Use numpy/scipy (scipy.stats.norm) which are installed.",
+    "Parity forward per expiry (C9): implement forward_from_parity(chain, expiry) that regresses C - P = DF*(F - K) across near-money call/put strike pairs (match on (root,expiry,strike)), returning F and an R^2 quality metric. feed-quality.md SS4 reports R^2 ~ 0.9998 over 213 NDXP pairs as the reference target on the committed snapshot. Do NOT assume rates; the regression recovers DF and F jointly. Emit a quality flag if R^2 is low or pairs are few.",
+    "Exact clocks: implement time_to_expiry honoring AM vs PM settlement. AM-settled roots (NDX, SPX per distill.AM_SETTLED_ROOTS) settle on the OPEN of the expiry date (so on the stated date their intraday gamma is NOT live); PM-settled (NDXP, QQQ, SPXW) settle on the close. Use exact time to settlement, never days/365 (build-spec SS7). Accept an 'asof' timestamp so replay uses the point-in-time clock.",
+    "Fitted surface: fit per-expiry IV as a smooth function of log-moneyness k=ln(K/F) (e.g. a low-order polynomial or smoothing spline in k), with no-arbitrage sanity checks (reject/flag crossed or negative-variance fits, monotonic total-variance-in-T where checkable). Expose surface_gamma(root,expiry,strike) that evaluates the FITTED IV then computes BS gamma -- this is the C8 fix. feed-quality.md SS3 reference: recomputing gamma from IV recovers 142 distinct values from the feed's 14 across 142 NDX strikes.",
+    "Versioning: stamp a surface model version string into outputs so historical levels record which model produced them (build-spec SS7).",
+    "Add tests/test_surface.py: (a) BS gamma matches a hand-computed value for a known (S,K,T,sigma,r,q) to ~1e-6; (b) parity forward on the committed NDXP 260908 snapshot reproduces F in the 29,498-29,516 range with R^2 > 0.999 (feed-quality reference); (c) surface_gamma on NDX recovers many more distinct gamma values than the raw feed's ~14 across the near-money window (assert distinct-count materially larger, e.g. > 100); (d) AM vs PM clock: on an AM-settled contract's stated expiry date the time-to-live is 0/negative intraday while a PM-settled one is positive.",
+    "Commit on nuke_root: 'feat: IV-surface engine -- parity forward (C9) and gamma-from-IV (C8) with exact clocks'."
+  ],
+  "acceptance_criteria": [
+    "BS gamma implementation matches a hand-computed reference to 1e-6.",
+    "Parity forward on the committed NDXP 260908 snapshot yields F within [29498,29516] with R^2 > 0.999 (matches feed-quality.md SS4).",
+    "surface_gamma recovers substantially more distinct gamma values than the raw feed across the near-money NDX window (C8 fix demonstrated).",
+    "AM/PM settlement clocks differ correctly: AM-settled contract intraday-on-expiry has non-positive time-to-settlement; PM-settled is positive.",
+    "No-arb / low-quality fits emit quality flags rather than silently returning bad numbers.",
+    "All tests pass."
+  ],
+  "verification": [
+    "export PYENV_ROOT=\"/root/.pyenv\" && export PATH=\"$PYENV_ROOT/shims:$PYENV_ROOT/bin:$PATH\" && pyenv global 3.11.15 && PYTHONPATH=src python -m pytest tests/test_surface.py -q"
+  ],
+  "blocked_reason": null,
+  "findings": "Implemented src/gammamap/surface.py + tests/test_surface.py. All 22 suite tests pass (PYTHONPATH=src pytest). Key verified numbers on the committed snapshot: (C9) forward_from_parity NDXP 260908 -> F=29511.30, DF=1.0040, R^2=0.999916 over 100 near-money pairs (within acceptance [29498,29516], R^2>0.999); F sits below feed spot 29544.15 = the C9 gap. (C8) surface_gamma recovers 138 distinct near-money NDX gamma values vs the feed's 14 (>100 target met). (C7) clocks: AM-settled NDX on its 09:30-ET-open expiry date at noon gives T=-0.000285 (non-positive/not live); PM-settled NDXP gives T=+0.000457. SURFACE_MODEL_VERSION='surface-1.0.0' stamped on ParityForward and ExpirySurfaceFit. Notes for downstream: (1) parity pair count is ~100-109 here (bid/ask mids only), not 213 as feed-quality.md SS4 reports over all near-money -- still far above the 8-pair floor and R^2 target. (2) AM_SETTLED_ROOTS lives in BOTH chain.py and distill.py; surface.py imports from chain.py. (3) ET DST is computed without a tz database (2nd Sun Mar -> 1st Sun Nov). (4) IVSurface fits one polynomial-in-log-moneyness smile per (root,expiry); wings are clamped, not extrapolated. GEX engine (FEAT-004) should consume surface.surface_gamma / surface_gamma_by_strike and never read feed gamma for NDX; use ParityForward.F as the index anchor for basis (C9)."
+}

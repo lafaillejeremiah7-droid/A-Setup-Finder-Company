@@ -1,0 +1,82 @@
+{
+  "asof": "2021-11-03T20:00:00+00:00",
+  "gamma_flip": {
+    "mnq_price": null,
+    "native_level": null,
+    "neutral": true,
+    "other_roots": []
+  },
+  "gex_unit": "usd_delta_per_1pct_move",
+  "instrument": "QQQ",
+  "model_versions": {
+    "gex": "gex-1.0.0",
+    "mapping": "mapping-1.0.0",
+    "surface": "surface-1.0.0"
+  },
+  "provenance": {
+    "basis_parity": null,
+    "feed_spot": 393.18,
+    "generator_version": "kaggle-backfill-1.0.0-pre-flip-fix",
+    "nq_price": null,
+    "oi_available": false,
+    "parity_forward": 393.3365,
+    "parity_r2": 0.999966,
+    "proxy": true,
+    "quality_flags": [
+      "basis_unavailable_no_synchronized_nq_quote",
+      "oi_absent_volume_proxy"
+    ],
+    "source": "kaggle_qqq_2020_2022",
+    "stale_before_flip_fix": true
+  },
+  "quote_date": "2021-11-03",
+  "regime": {
+    "divergence": false,
+    "total_sign": "+",
+    "zerodte_sign": "+"
+  },
+  "render_target": "QQQ_native",
+  "schema_version": "levels-1.0.0",
+  "walls": [
+    {
+      "confidence": "high",
+      "gex_per_1pct": 20718254.48,
+      "label": "Call Wall",
+      "mnq_price": null,
+      "native_level": 392.0,
+      "side": "call",
+      "strength": "WEAK",
+      "universe": "total"
+    },
+    {
+      "confidence": "high",
+      "gex_per_1pct": -16916368.27,
+      "label": "Put Wall",
+      "mnq_price": null,
+      "native_level": 390.0,
+      "side": "put",
+      "strength": "WEAK",
+      "universe": "total"
+    },
+    {
+      "confidence": "high",
+      "gex_per_1pct": 1029350.2,
+      "label": "0DTE Call Wall",
+      "mnq_price": null,
+      "native_level": 398.0,
+      "side": "call",
+      "strength": "STRONG",
+      "universe": "0dte"
+    },
+    {
+      "confidence": "high",
+      "gex_per_1pct": -419806.0,
+      "label": "0DTE Put Wall",
+      "mnq_price": null,
+      "native_level": 383.0,
+      "side": "put",
+      "strength": "MODERATE",
+      "universe": "0dte"
+    }
+  ]
+}
