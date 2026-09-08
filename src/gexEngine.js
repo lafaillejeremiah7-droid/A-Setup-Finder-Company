@@ -6,11 +6,15 @@ const DEFAULT_THRESHOLDS = Object.freeze({
 
 export function classifyStrength(levels, wall, thresholds = DEFAULT_THRESHOLDS) {
   if (!wall || !Array.isArray(levels) || levels.length === 0) return "N/A";
+  if (wall.gex === null || wall.gex === undefined || wall.gex === "") return "N/A";
+
+  const wallGex = Number(wall.gex);
+  if (!Number.isFinite(wallGex)) return "N/A";
 
   const totalAbs = levels.reduce((sum, item) => sum + Math.abs(Number(item.gex) || 0), 0);
-  if (totalAbs <= 0 || !Number.isFinite(Number(wall.gex))) return "N/A";
+  if (totalAbs <= 0) return "N/A";
 
-  const share = Math.abs(Number(wall.gex)) / totalAbs;
+  const share = Math.abs(wallGex) / totalAbs;
   if (share >= thresholds.extreme) return "EXTREME";
   if (share >= thresholds.strong) return "STRONG";
   if (share >= thresholds.moderate) return "MODERATE";
