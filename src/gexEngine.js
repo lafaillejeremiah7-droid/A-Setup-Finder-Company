@@ -8,9 +8,9 @@ export function classifyStrength(levels, wall, thresholds = DEFAULT_THRESHOLDS) 
   if (!wall || !Array.isArray(levels) || levels.length === 0) return "N/A";
 
   const totalAbs = levels.reduce((sum, item) => sum + Math.abs(Number(item.gex) || 0), 0);
-  if (totalAbs <= 0) return "N/A";
+  if (totalAbs <= 0 || !Number.isFinite(Number(wall.gex))) return "N/A";
 
-  const share = Math.abs(wall.gex) / totalAbs;
+  const share = Math.abs(Number(wall.gex)) / totalAbs;
   if (share >= thresholds.extreme) return "EXTREME";
   if (share >= thresholds.strong) return "STRONG";
   if (share >= thresholds.moderate) return "MODERATE";
@@ -69,9 +69,73 @@ export function mapLevelToMnq(level, market) {
   throw new Error(`Unsupported sourceUnderlying: ${source}`);
 }
 
+function normalizeDirectWall(value) {
+  if (value === undefined || value === null) return null;
+
+  if (typeof value === "number" || typeof value === "string") {
+    const strike = Number(value);
+    return Number.isFinite(strike) ? { strike, gex: null, strength: null } : null;
+  }
+
+  if (typeof value === "object") {
+    const strike = Number(value.strike ?? value.level);
+    if (!Number.isFinite(strike)) return null;
+    const gex = Number(value.gex);
+    return {
+      strike,
+      gex: Number.isFinite(gex) ? gex : null,
+      strength: typeof value.strength === "string" ? value.strength.toUpperCase() : null,
+    };
+  }
+
+  return null;
+}
+
+function resolveWall(payload, side) {
+  const cap = side[0].toUpperCase() + side.slice(1);
+  const wallKey = `${side}Wall`;
+  const levelsKey = `${side}Levels`;
+  const strengthKey = `${side}WallStrength`;
+  const gexKey = `${side}WallGex`;
+  const levels = Array.isArray(payload[levelsKey]) ? payload[levelsKey] : [];
+
+  const direct = normalizeDirectWall(payload[wallKey]);
+  if (!direct) {
+    const derived = strongestLevel(levels);
+    if (!derived) return null;
+    return {
+      ...derived,
+      strength: classifyStrength(levels, derived),
+      source: `DERIVED_${cap.toUpperCase()}_LEVELS`,
+    };
+  }
+
+  let gex = direct.gex;
+  const explicitGex = Number(payload[gexKey]);
+  if (!Number.isFinite(gex) && Number.isFinite(explicitGex)) gex = explicitGex;
+
+  if (!Number.isFinite(gex) && levels.length > 0) {
+    const match = levels.find((item) => Number(item.strike) === direct.strike);
+    const matchedGex = Number(match?.gex);
+    if (Number.isFinite(matchedGex)) gex = matchedGex;
+  }
+
+  const explicitStrength = typeof payload[strengthKey] === "string"
+    ? payload[strengthKey].toUpperCase()
+    : null;
+  const strength = direct.strength || explicitStrength || classifyStrength(levels, { strike: direct.strike, gex });
+
+  return {
+    strike: direct.strike,
+    gex: Number.isFinite(gex) ? gex : null,
+    strength,
+    source: "PUBLISHED_WALL",
+  };
+}
+
 export function buildGexState(payload) {
-  const callWallSource = strongestLevel(payload.callLevels);
-  const putWallSource = strongestLevel(payload.putLevels);
+  const callWallSource = resolveWall(payload, "call");
+  const putWallSource = resolveWall(payload, "put");
 
   const market = {
     sourceUnderlying: payload.sourceUnderlying,
@@ -85,7 +149,6 @@ export function buildGexState(payload) {
     ? {
         ...callWallSource,
         mnqLevel: mapLevelToMnq(callWallSource.strike, market),
-        strength: classifyStrength(payload.callLevels, callWallSource),
       }
     : null;
 
@@ -93,11 +156,13 @@ export function buildGexState(payload) {
     ? {
         ...putWallSource,
         mnqLevel: mapLevelToMnq(putWallSource.strike, market),
-        strength: classifyStrength(payload.putLevels, putWallSource),
       }
     : null;
 
-  const gammaFlipSource = Number(payload.gammaFlip);
+  const gammaFlipRaw = typeof payload.gammaFlip === "object"
+    ? payload.gammaFlip.level ?? payload.gammaFlip.strike
+    : payload.gammaFlip;
+  const gammaFlipSource = Number(gammaFlipRaw);
   const gammaFlip = Number.isFinite(gammaFlipSource)
     ? {
         sourceLevel: gammaFlipSource,
@@ -105,13 +170,15 @@ export function buildGexState(payload) {
       }
     : null;
 
+  const sourceUnderlying = String(payload.sourceUnderlying || "NDX").toUpperCase();
+
   return {
     timestamp: payload.timestamp || new Date().toISOString(),
-    sourceUnderlying: String(payload.sourceUnderlying || "NDX").toUpperCase(),
+    sourceUnderlying,
     sourcePrice: Number(payload.sourcePrice),
     mnqPrice: Number(payload.mnqPrice),
     basis:
-      String(payload.sourceUnderlying || "NDX").toUpperCase() === "NDX"
+      sourceUnderlying === "NDX"
         ? Number(payload.mnqPrice) - Number(payload.sourcePrice)
         : null,
     gexUnit: payload.gexUnit || "USD_PER_1PCT_MOVE",
