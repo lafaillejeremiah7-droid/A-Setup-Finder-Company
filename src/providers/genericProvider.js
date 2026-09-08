@@ -8,6 +8,8 @@ function demoPayload() {
     netGex: -2850000000,
     gammaFlip: 25035,
     gexUnit: "USD_PER_1PCT_MOVE",
+    callWall: { strike: 25200, gex: -1780000000, strength: "EXTREME" },
+    putWall: { strike: 24900, gex: 1460000000, strength: "STRONG" },
     callLevels: [
       { strike: 25200, gex: -1780000000 },
       { strike: 25300, gex: -920000000 },
@@ -53,14 +55,18 @@ export class GenericProvider {
   }
 
   validate(payload) {
-    const required = ["sourceUnderlying", "sourcePrice", "mnqPrice", "netGex", "gammaFlip", "callLevels", "putLevels"];
+    const required = ["sourceUnderlying", "sourcePrice", "mnqPrice", "netGex", "gammaFlip"];
     for (const key of required) {
       if (payload[key] === undefined || payload[key] === null) {
         throw new Error(`Provider payload missing required field: ${key}`);
       }
     }
-    if (!Array.isArray(payload.callLevels) || !Array.isArray(payload.putLevels)) {
-      throw new Error("callLevels and putLevels must be arrays");
+
+    const hasPublishedWalls = payload.callWall !== undefined && payload.putWall !== undefined;
+    const hasLevelArrays = Array.isArray(payload.callLevels) && Array.isArray(payload.putLevels);
+
+    if (!hasPublishedWalls && !hasLevelArrays) {
+      throw new Error("Provider must supply callWall + putWall, or callLevels + putLevels");
     }
   }
 }
