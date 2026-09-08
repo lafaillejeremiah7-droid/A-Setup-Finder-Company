@@ -4,12 +4,16 @@ const DEFAULT_THRESHOLDS = Object.freeze({
   moderate: 0.12,
 });
 
+function optionalNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export function classifyStrength(levels, wall, thresholds = DEFAULT_THRESHOLDS) {
   if (!wall || !Array.isArray(levels) || levels.length === 0) return "N/A";
-  if (wall.gex === null || wall.gex === undefined || wall.gex === "") return "N/A";
-
-  const wallGex = Number(wall.gex);
-  if (!Number.isFinite(wallGex)) return "N/A";
+  const wallGex = optionalNumber(wall.gex);
+  if (wallGex === null) return "N/A";
 
   const totalAbs = levels.reduce((sum, item) => sum + Math.abs(Number(item.gex) || 0), 0);
   if (totalAbs <= 0) return "N/A";
@@ -45,13 +49,15 @@ export function mapLevelToMnq(level, market) {
   if (!Number.isFinite(sourceLevel)) return null;
 
   const source = String(market.sourceUnderlying || "NDX").toUpperCase();
-  const mnqPrice = Number(market.mnqPrice);
 
-  if (!Number.isFinite(mnqPrice)) {
-    throw new Error("mnqPrice is required for mapping");
-  }
-
+  // NQ and MNQ use the same Nasdaq-100 index-point scale. No basis conversion
+  // is required for an NQ-native GEX strike/flip to be drawn on an MNQ chart.
   if (source === "MNQ" || source === "NQ") return sourceLevel;
+
+  const mnqPrice = Number(market.mnqPrice);
+  if (!Number.isFinite(mnqPrice)) {
+    throw new Error("mnqPrice is required for non-NQ/MNQ mapping");
+  }
 
   if (source === "NDX") {
     const ndxPrice = Number(market.sourcePrice ?? market.ndxPrice);
@@ -84,10 +90,9 @@ function normalizeDirectWall(value) {
   if (typeof value === "object") {
     const strike = Number(value.strike ?? value.level);
     if (!Number.isFinite(strike)) return null;
-    const gex = Number(value.gex);
     return {
       strike,
-      gex: Number.isFinite(gex) ? gex : null,
+      gex: optionalNumber(value.gex),
       strength: typeof value.strength === "string" ? value.strength.toUpperCase() : null,
     };
   }
@@ -115,13 +120,13 @@ function resolveWall(payload, side) {
   }
 
   let gex = direct.gex;
-  const explicitGex = Number(payload[gexKey]);
-  if (!Number.isFinite(gex) && Number.isFinite(explicitGex)) gex = explicitGex;
+  const explicitGex = optionalNumber(payload[gexKey]);
+  if (gex === null && explicitGex !== null) gex = explicitGex;
 
-  if (!Number.isFinite(gex) && levels.length > 0) {
+  if (gex === null && levels.length > 0) {
     const match = levels.find((item) => Number(item.strike) === direct.strike);
-    const matchedGex = Number(match?.gex);
-    if (Number.isFinite(matchedGex)) gex = matchedGex;
+    const matchedGex = optionalNumber(match?.gex);
+    if (matchedGex !== null) gex = matchedGex;
   }
 
   const explicitStrength = typeof payload[strengthKey] === "string"
@@ -131,7 +136,7 @@ function resolveWall(payload, side) {
 
   return {
     strike: direct.strike,
-    gex: Number.isFinite(gex) ? gex : null,
+    gex,
     strength,
     source: "PUBLISHED_WALL",
   };
@@ -166,8 +171,8 @@ export function buildGexState(payload) {
   const gammaFlipRaw = typeof payload.gammaFlip === "object"
     ? payload.gammaFlip.level ?? payload.gammaFlip.strike
     : payload.gammaFlip;
-  const gammaFlipSource = Number(gammaFlipRaw);
-  const gammaFlip = Number.isFinite(gammaFlipSource)
+  const gammaFlipSource = optionalNumber(gammaFlipRaw);
+  const gammaFlip = gammaFlipSource !== null
     ? {
         sourceLevel: gammaFlipSource,
         mnqLevel: mapLevelToMnq(gammaFlipSource, market),
@@ -178,9 +183,11 @@ export function buildGexState(payload) {
 
   return {
     timestamp: payload.timestamp || new Date().toISOString(),
+    provider: payload.provider || null,
+    sourceSymbol: payload.sourceSymbol || null,
     sourceUnderlying,
-    sourcePrice: Number(payload.sourcePrice),
-    mnqPrice: Number(payload.mnqPrice),
+    sourcePrice: optionalNumber(payload.sourcePrice),
+    mnqPrice: optionalNumber(payload.mnqPrice),
     basis:
       sourceUnderlying === "NDX"
         ? Number(payload.mnqPrice) - Number(payload.sourcePrice)
