@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeFlashAlphaSnapshot } from "../src/providers/flashAlphaProvider.js";
+import {
+  FlashAlphaProvider,
+  normalizeFlashAlphaSnapshot,
+} from "../src/providers/flashAlphaProvider.js";
 
 const levels = {
   symbol: "NQ=F",
@@ -51,4 +54,43 @@ test("FlashAlpha normalization tolerates a null published wall and keeps strike 
   assert.equal(snapshot.callWall, null);
   assert.equal(snapshot.callLevels[0].strike, 25250);
   assert.equal(snapshot.callLevels[0].gex, 1780000000);
+});
+
+test("FlashAlpha provider calls encoded NQ flow endpoints with X-Api-Key and caches full GEX", async () => {
+  const calls = [];
+  const fakeFetch = async (url, options) => {
+    calls.push({ url, options });
+    const isLevels = url.includes("/levels/");
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return isLevels ? levels : gex;
+      },
+      async text() {
+        return "";
+      },
+    };
+  };
+
+  const provider = new FlashAlphaProvider(
+    {
+      DEMO_MODE: "false",
+      FLASHALPHA_API_KEY: "test-key",
+      FLASHALPHA_SYMBOL: "NQ=F",
+      FLASHALPHA_GEX_REFRESH_MS: "300000",
+    },
+    fakeFetch,
+  );
+
+  const first = await provider.fetchSnapshot();
+  const second = await provider.fetchSnapshot();
+
+  assert.equal(first.callWall.strike, 25250);
+  assert.equal(second.putWall.strike, 24950);
+  assert.equal(calls.length, 3, "first refresh should call levels+gex; second should call levels only");
+  assert.ok(calls[0].url.includes("NQ%3DF"));
+  assert.equal(calls[0].options.headers["X-Api-Key"], "test-key");
+  assert.equal(calls.filter((call) => call.url.includes("/gex/")).length, 1);
+  assert.equal(calls.filter((call) => call.url.includes("/levels/")).length, 2);
 });
