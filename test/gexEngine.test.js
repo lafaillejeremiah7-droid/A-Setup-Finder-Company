@@ -58,7 +58,7 @@ test("strength is concentration, not a probability", () => {
   assert.equal(classifyStrength(levels, levels[0]), "EXTREME");
 });
 
-test("buildGexState returns one call line, one put line, and one flip line", () => {
+test("derived mode returns one call line, one put line, and one flip line", () => {
   const state = buildGexState({
     timestamp: "2026-09-07T14:30:00Z",
     sourceUnderlying: "NDX",
@@ -79,8 +79,43 @@ test("buildGexState returns one call line, one put line, and one flip line", () 
   assert.equal(state.regime, "NEGATIVE");
   assert.equal(state.callWall.strike, 25200);
   assert.equal(state.callWall.mnqLevel, 25242);
+  assert.equal(state.callWall.source, "DERIVED_CALL_LEVELS");
   assert.equal(state.putWall.strike, 24800);
   assert.equal(state.putWall.mnqLevel, 24842);
   assert.equal(state.gammaFlip.mnqLevel, 24992);
   assert.equal(state.basis, 42);
+});
+
+test("published wall mode uses provider wall directly instead of re-ranking arrays", () => {
+  const state = buildGexState({
+    timestamp: "2026-09-07T14:30:00Z",
+    sourceUnderlying: "NDX",
+    sourcePrice: 25000,
+    mnqPrice: 25040,
+    netGex: 1800000000,
+    gammaFlip: { level: 24980 },
+    callWall: { strike: 25250, gex: 900000000, strength: "strong" },
+    putWall: 24850,
+    putWallGex: -750000000,
+    putWallStrength: "extreme",
+    callLevels: [
+      { strike: 25300, gex: 2000000000 },
+      { strike: 25250, gex: 900000000 },
+    ],
+    putLevels: [
+      { strike: 24850, gex: -750000000 },
+      { strike: 24750, gex: -1000000000 },
+    ],
+  });
+
+  assert.equal(state.regime, "POSITIVE");
+  assert.equal(state.callWall.strike, 25250);
+  assert.equal(state.callWall.mnqLevel, 25290);
+  assert.equal(state.callWall.strength, "STRONG");
+  assert.equal(state.callWall.source, "PUBLISHED_WALL");
+  assert.equal(state.putWall.strike, 24850);
+  assert.equal(state.putWall.mnqLevel, 24890);
+  assert.equal(state.putWall.gex, -750000000);
+  assert.equal(state.putWall.strength, "EXTREME");
+  assert.equal(state.gammaFlip.mnqLevel, 25020);
 });
