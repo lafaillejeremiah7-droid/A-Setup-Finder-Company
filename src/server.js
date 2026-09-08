@@ -3,6 +3,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { GenericProvider } from "./providers/genericProvider.js";
+import { FlashAlphaProvider } from "./providers/flashAlphaProvider.js";
 import { buildGexState } from "./gexEngine.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,10 +12,17 @@ const publicDir = path.resolve(__dirname, "../public");
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const pollMs = Math.max(1000, Number(process.env.POLL_MS || 15000));
-const maxAgeMs = Math.max(pollMs * 2, Number(process.env.MAX_DATA_AGE_MS || 60000));
+const pollMs = Math.max(1000, Number(process.env.POLL_MS || 60000));
+const maxAgeMs = Math.max(pollMs * 2, Number(process.env.MAX_DATA_AGE_MS || 180000));
 
-const provider = new GenericProvider(process.env);
+function createProvider(env) {
+  const name = String(env.GEX_PROVIDER || "flashalpha").toLowerCase();
+  if (name === "flashalpha") return new FlashAlphaProvider(env);
+  if (name === "generic") return new GenericProvider(env);
+  throw new Error(`Unsupported GEX_PROVIDER: ${name}`);
+}
+
+const provider = createProvider(process.env);
 let state = null;
 let lastError = null;
 let lastUpdatedAt = null;
@@ -88,5 +96,6 @@ setInterval(refresh, pollMs).unref();
 
 app.listen(port, () => {
   console.log(`MNQ GEX dashboard listening on http://localhost:${port}`);
+  console.log(`Provider: ${String(process.env.GEX_PROVIDER || "flashalpha").toLowerCase()}`);
   console.log(`Polling every ${pollMs} ms`);
 });
