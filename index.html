@@ -3,14 +3,95 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>English Coach</title>
+    <title>English Coach — live academic writing feedback</title>
   </head>
   <body>
-    <div id="app" class="layout">
-      <section class="col col-left" id="left"></section>
-      <section class="col col-right" id="right"></section>
-    </div>
-    <footer class="privacy">Runs entirely in your browser. Nothing you write leaves this machine.</footer>
+    <header class="top">
+      <h1>English Coach</h1>
+      <p class="tag">Share the window you're writing in. You get hints, not answers.</p>
+    </header>
+    <main id="app" class="layout">
+      <section class="col col-left">
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="screen" role="tab">Screen</button>
+          <button class="tab" data-tab="type" role="tab" data-testid="tab-type">Type / paste</button>
+        </div>
+
+        <div class="pane" data-pane="screen">
+          <div class="controls">
+            <button id="share-btn" class="primary" data-testid="share-btn">Share screen</button>
+            <button id="clear-crop-btn" disabled>Clear crop</button>
+            <button id="pause-btn" disabled>Pause</button>
+            <label id="deep-wrap" class="toggle" hidden><input type="checkbox" id="deep-toggle" /> Deep feedback (on-device AI)</label>
+          </div>
+          <div class="preview">
+            <video id="preview" muted playsinline></video>
+            <canvas id="crop-overlay" data-testid="crop-overlay"></canvas>
+            <div class="preview-empty" id="preview-empty">
+              Click <b>Share screen</b>, pick the window with your writing, then <b>drag a box</b> around the text.
+            </div>
+          </div>
+          <div class="status" id="ocr-status" data-testid="ocr-status">Not sharing.</div>
+        </div>
+
+        <div class="pane" data-pane="type" hidden>
+          <textarea id="textarea" data-testid="textarea-input" spellcheck="false"
+            placeholder="Type or paste your writing. Feedback updates as you pause."></textarea>
+        </div>
+
+        <h2>What I'm reading</h2>
+        <div id="text-view" class="text-view" data-testid="text-view"><span class="muted">Nothing yet.</span></div>
+
+        <h2>Issues <span id="issue-count" class="muted"></span></h2>
+        <p class="muted small">Try to fix each one yourself first. <b>Rule</b> explains the principle. <b>Reveal</b> shows the fix and counts against your independence score.</p>
+        <ol id="issue-list" class="issue-list"></ol>
+      </section>
+
+      <section class="col col-right">
+        <div class="card meter-card">
+          <div class="meter-head">
+            <div>
+              <div class="band" id="level-band" data-testid="level-band">—</div>
+              <div class="score">score <span id="level-score" data-testid="level-score">—</span> / 22</div>
+            </div>
+            <span class="pill" id="level-confidence" data-testid="level-confidence">no data</span>
+          </div>
+          <div class="scale">
+            <div class="scale-bar"><div class="marker" id="marker"></div></div>
+            <div class="scale-labels"><span>K</span><span>Gr 6</span><span>Gr 12</span><span>UG</span><span>MA</span><span>PhD</span></div>
+          </div>
+          <div class="penalty muted small" id="penalty"></div>
+        </div>
+
+        <div class="card">
+          <h3>Breakdown</h3>
+          <div class="dims" id="dims"></div>
+        </div>
+
+        <div class="card">
+          <h3>This session</h3>
+          <svg id="trend" data-testid="trend-chart" class="trend" viewBox="0 0 300 90" preserveAspectRatio="none"></svg>
+          <div class="stats">
+            <div><b id="stat-self" data-testid="stat-selfcorrected">0</b><span>self-corrected</span></div>
+            <div><b id="stat-revealed" data-testid="stat-revealed">0</b><span>revealed</span></div>
+            <div><b id="stat-indep">—</b><span>independence</span></div>
+          </div>
+          <div id="categories" class="cats"></div>
+        </div>
+
+        <div class="card">
+          <h3>Where you stand</h3>
+          <ol id="focus" class="focus" data-testid="focus-areas"><li class="muted">Write at least a paragraph to get focus areas.</li></ol>
+          <p id="compare" class="muted small"></p>
+          <details>
+            <summary>Past sessions</summary>
+            <ul id="history" class="history"></ul>
+            <button id="clear-history" class="link">Clear history</button>
+          </details>
+        </div>
+      </section>
+    </main>
+    <footer class="privacy">Runs entirely in your browser. Nothing you write leaves this machine. Levels are estimates, not a certified test.</footer>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
