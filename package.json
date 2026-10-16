@@ -1,0 +1,30 @@
+{
+  "name": "english-coach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live, in-browser academic English coach you can share your screen with.",
+  "type": "module",
+  "scripts": {
+    "copy-ocr": "node scripts/copy-ocr-assets.mjs",
+    "predev": "node scripts/copy-ocr-assets.mjs",
+    "dev": "vite",
+    "prebuild": "node scripts/copy-ocr-assets.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "pretest:e2e": "node scripts/copy-ocr-assets.mjs",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
+    "harper.js": "^2.10.0",
+    "syllable": "^5.0.1",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}
